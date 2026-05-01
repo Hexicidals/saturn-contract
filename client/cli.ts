@@ -4,8 +4,9 @@ import { BN, Idl, Program } from "@coral-xyz/anchor";
 import {
   Connection,
   PublicKey,
-  Transaction,
+  TransactionMessage,
   TransactionInstruction,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import { Command } from "commander";
 import "dotenv/config";
@@ -14,6 +15,7 @@ import path from "path";
 import {
   ClaimMode,
   PositionSide,
+  PUMP_FEES_PROGRAM_ID,
   TargetMarket,
   USDC_MINT,
   WSOL_MINT,
@@ -31,6 +33,8 @@ import { decodeSharingConfig } from "./sharingConfig";
 import { positionSizeUsdE6 } from "./math";
 
 type ProgramClient = Program<Idl>;
+const USDC_PRICE_USD_E6 = "1000000";
+const MAX_U64 = (1n << 64n) - 1n;
 
 function publicKey(value: string): PublicKey {
   return new PublicKey(value);
@@ -61,6 +65,56 @@ function parseSide(value: string): PositionSide {
   throw new Error("side must be long or short");
 }
 
+function parseClaimMode(value: string): ClaimMode {
+  const normalized = value.toLowerCase();
+  if (normalized === "single" || normalized === "shared") return normalized;
+  throw new Error("mode must be single or shared");
+}
+
+function parseU64BigInt(value: string, name: string): bigint {
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) {
+    throw new Error(`${name} must be a non-negative decimal u64`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > MAX_U64) {
+    throw new Error(`${name} must fit in u64`);
+  }
+  return parsed;
+}
+
+function parseU64BN(value: string, name: string): BN {
+  return new BN(parseU64BigInt(value, name).toString());
+}
+
+function quotePriceBounds(args: {
+  quoteMint: PublicKey;
+  minQuotePriceUsdE6?: string;
+  maxQuotePriceUsdE6?: string;
+}) {
+  const min = args.minQuotePriceUsdE6;
+  const max = args.maxQuotePriceUsdE6;
+  if (!min && !max && args.quoteMint.equals(USDC_MINT)) {
+    return {
+      minQuotePriceUsdE6: parseU64BN(USDC_PRICE_USD_E6, "min quote price"),
+      maxQuotePriceUsdE6: parseU64BN(USDC_PRICE_USD_E6, "max quote price"),
+    };
+  }
+  if (!min || !max) {
+    throw new Error(
+      "--min-quote-price-usd-e6 and --max-quote-price-usd-e6 are required together",
+    );
+  }
+  const minPrice = parseU64BigInt(min, "min quote price");
+  const maxPrice = parseU64BigInt(max, "max quote price");
+  if (minPrice === 0n || maxPrice < minPrice) {
+    throw new Error("quote price bounds must be non-zero and ordered");
+  }
+  return {
+    minQuotePriceUsdE6: new BN(minPrice.toString()),
+    maxQuotePriceUsdE6: new BN(maxPrice.toString()),
+  };
+}
+
 function loadIdl(): Idl {
   const idlPath = path.resolve(
     process.cwd(),
@@ -83,6 +137,10 @@ function provider(): anchor.AnchorProvider {
   });
 }
 
+function isMainnetRpcUrl(rpcUrl: string): boolean {
+  return rpcUrl.includes("mainnet-beta") || rpcUrl.includes("api.mainnet.solana.com");
+}
+
 function programClient(provider: anchor.AnchorProvider): ProgramClient {
   return new Program(loadIdl(), provider) as ProgramClient;
 }
@@ -92,16 +150,25 @@ async function simulateOrSend(args: {
   instructions: TransactionInstruction[];
   send: boolean;
 }) {
-  const tx = new Transaction();
-  tx.add(...args.instructions);
-  tx.feePayer = args.provider.wallet.publicKey;
+  const rpcUrl = args.provider.connection.rpcEndpoint;
+  if (args.send && isMainnetRpcUrl(rpcUrl) && process.env.ALLOW_MAINNET_SEND !== "true") {
+    throw new Error("Set ALLOW_MAINNET_SEND=true to submit transactions to mainnet RPC.");
+  }
+
   const latest = await args.provider.connection.getLatestBlockhash();
-  tx.recentBlockhash = latest.blockhash;
-  const wallet = args.provider.wallet as anchor.Wallet;
-  tx.sign(wallet.payer);
+  const message = new TransactionMessage({
+    payerKey: args.provider.wallet.publicKey,
+    recentBlockhash: latest.blockhash,
+    instructions: args.instructions,
+  }).compileToV0Message();
+  const tx = new VersionedTransaction(message);
 
   if (!args.send) {
-    const simulation = await args.provider.connection.simulateTransaction(tx);
+    const simulation = await args.provider.connection.simulateTransaction(tx, {
+      sigVerify: false,
+      replaceRecentBlockhash: false,
+      commitment: "confirmed",
+    });
     console.log(
       JSON.stringify(
         {
@@ -117,8 +184,10 @@ async function simulateOrSend(args: {
     return;
   }
 
+  const wallet = args.provider.wallet as anchor.Wallet;
+  tx.sign([wallet.payer]);
   const signature = await args.provider.connection.sendRawTransaction(
-    tx.serialize(),
+    Buffer.from(tx.serialize()),
     { skipPreflight: false },
   );
   console.log(JSON.stringify({ mode: "send", signature }, null, 2));
@@ -129,6 +198,8 @@ function tradeConfigParams(args: {
   market: TargetMarket;
   side: PositionSide;
   maxLeverageBps: string;
+  minQuotePriceUsdE6?: string;
+  maxQuotePriceUsdE6?: string;
 }) {
   const config = configForMarket({
     feeOwner: PublicKey.default,
@@ -136,13 +207,19 @@ function tradeConfigParams(args: {
     market: args.market,
     side: args.side,
   });
+  const bounds = quotePriceBounds({
+    quoteMint: args.quoteMint,
+    minQuotePriceUsdE6: args.minQuotePriceUsdE6,
+    maxQuotePriceUsdE6: args.maxQuotePriceUsdE6,
+  });
   return {
     quoteMint: args.quoteMint,
     targetMarket: enumVariant(args.market),
     side: enumVariant(args.side),
     custody: config.custody,
     collateralCustody: config.collateralCustody,
-    maxLeverageBps: new BN(args.maxLeverageBps),
+    maxLeverageBps: parseU64BN(args.maxLeverageBps, "max leverage bps"),
+    ...bounds,
   };
 }
 
@@ -156,13 +233,13 @@ function claimOpenParams(args: {
   maxClaimAmount: string;
 }) {
   return {
-    leverageBps: new BN(args.leverageBps),
-    quotePriceUsdE6: new BN(args.quotePriceUsdE6),
-    priceSlippageUsdE6: new BN(args.priceSlippageUsdE6),
-    jupiterMinimumOut: new BN(args.jupiterMinimumOut),
-    positionRequestCounter: new BN(args.counter),
-    minClaimAmount: new BN(args.minClaimAmount),
-    maxClaimAmount: new BN(args.maxClaimAmount),
+    leverageBps: parseU64BN(args.leverageBps, "leverage bps"),
+    quotePriceUsdE6: parseU64BN(args.quotePriceUsdE6, "quote price"),
+    priceSlippageUsdE6: parseU64BN(args.priceSlippageUsdE6, "price slippage"),
+    jupiterMinimumOut: parseU64BN(args.jupiterMinimumOut, "jupiter minimum out"),
+    positionRequestCounter: parseU64BN(args.counter, "counter"),
+    minClaimAmount: parseU64BN(args.minClaimAmount, "min claim amount"),
+    maxClaimAmount: parseU64BN(args.maxClaimAmount, "max claim amount"),
   };
 }
 
@@ -187,6 +264,12 @@ function ensureMinimumOut(args: {
   }
 }
 
+function requireWalletSigner(label: string, wallet: PublicKey, signer: PublicKey) {
+  if (!wallet.equals(signer)) {
+    throw new Error(`${label} must match the local wallet for this CLI command`);
+  }
+}
+
 async function fetchTradeConfig(
   program: ProgramClient,
   feeOwner: PublicKey,
@@ -207,6 +290,7 @@ async function fetchTradeConfig(
 
 async function loadSharedRemainingAccounts(args: {
   connection: Connection;
+  mint: PublicKey;
   sharingConfig: PublicKey;
   quoteMint: PublicKey;
 }) {
@@ -214,7 +298,13 @@ async function loadSharedRemainingAccounts(args: {
   if (!info) {
     throw new Error(`Sharing config not found: ${args.sharingConfig.toBase58()}`);
   }
+  if (!info.owner.equals(PUMP_FEES_PROGRAM_ID)) {
+    throw new Error(`Sharing config owner mismatch: ${info.owner.toBase58()}`);
+  }
   const decoded = decodeSharingConfig(info.data);
+  if (!decoded.mint.equals(args.mint)) {
+    throw new Error(`Sharing config mint mismatch: ${decoded.mint.toBase58()}`);
+  }
   return shareholderRemainingAccounts({
     shareholders: decoded.shareholders,
     quoteMint: args.quoteMint,
@@ -244,11 +334,14 @@ cli
   .requiredOption("--market <sol|eth|btc>")
   .requiredOption("--side <long|short>")
   .requiredOption("--max-leverage-bps <bps>")
+  .option("--min-quote-price-usd-e6 <amount>", "minimum accepted quote price")
+  .option("--max-quote-price-usd-e6 <amount>", "maximum accepted quote price")
   .option("--send", "submit instead of simulate", false)
   .action(async (opts) => {
     const p = provider();
     const program = programClient(p);
     const feeOwner = publicKey(opts.feeOwner);
+    requireWalletSigner("fee owner", p.wallet.publicKey, feeOwner);
     const ix = await (program.methods as any)
       .initializeTradeConfig(
         tradeConfigParams({
@@ -256,6 +349,8 @@ cli
           market: parseMarket(opts.market),
           side: parseSide(opts.side),
           maxLeverageBps: opts.maxLeverageBps,
+          minQuotePriceUsdE6: opts.minQuotePriceUsdE6,
+          maxQuotePriceUsdE6: opts.maxQuotePriceUsdE6,
         }),
       )
       .accounts({
@@ -275,6 +370,8 @@ cli
   .requiredOption("--market <sol|eth|btc>")
   .requiredOption("--side <long|short>")
   .requiredOption("--max-leverage-bps <bps>")
+  .option("--min-quote-price-usd-e6 <amount>", "minimum accepted quote price")
+  .option("--max-quote-price-usd-e6 <amount>", "maximum accepted quote price")
   .option("--paused", "pause config", false)
   .option("--send", "submit instead of simulate", false)
   .action(async (opts) => {
@@ -288,6 +385,8 @@ cli
           market: parseMarket(opts.market),
           side: parseSide(opts.side),
           maxLeverageBps: opts.maxLeverageBps,
+          minQuotePriceUsdE6: opts.minQuotePriceUsdE6,
+          maxQuotePriceUsdE6: opts.maxQuotePriceUsdE6,
         }),
         opts.paused,
       )
@@ -309,7 +408,7 @@ cli
   .requiredOption("--counter <u64>")
   .option("--mint <pubkey>", "base mint for shared mode")
   .action(async (opts) => {
-    const mode = opts.mode as ClaimMode;
+    const mode = parseClaimMode(opts.mode);
     const feeOwner = publicKey(opts.feeOwner);
     const config = configForMarket({
       feeOwner,
@@ -317,7 +416,7 @@ cli
       market: parseMarket(opts.market),
       side: parseSide(opts.side),
     });
-    const counter = new BN(opts.counter);
+    const counter = parseU64BN(opts.counter, "counter");
     if (mode === "single") {
       logResolved(resolveSingleAccounts({ config, counter }));
       return;
@@ -352,6 +451,7 @@ cli
     const p = provider();
     const program = programClient(p);
     const feeOwner = publicKey(opts.feeOwner);
+    requireWalletSigner("fee owner", p.wallet.publicKey, feeOwner);
     const config = await fetchTradeConfig(program, feeOwner);
     ensureMinimumOut({ config, jupiterMinimumOut: opts.jupiterMinimumOut });
 
@@ -366,15 +466,15 @@ cli
     });
 
     const previewSize = positionSizeUsdE6({
-      collateralTokenDelta: BigInt(opts.minClaimAmount || "0") || 1n,
+      collateralTokenDelta: parseU64BigInt(opts.minClaimAmount || "0", "min claim amount") || 1n,
       quoteMint: config.quoteMint,
-      quotePriceUsdE6: BigInt(opts.quotePriceUsdE6),
-      leverageBps: BigInt(opts.leverageBps),
+      quotePriceUsdE6: parseU64BigInt(opts.quotePriceUsdE6, "quote price"),
+      leverageBps: parseU64BigInt(opts.leverageBps, "leverage bps"),
     });
     console.error(`minimum preview sizeUsdDelta=${previewSize.toString()}`);
 
-    const mode = opts.mode as ClaimMode;
-    const counter = new BN(opts.counter);
+    const mode = parseClaimMode(opts.mode);
+    const counter = parseU64BN(opts.counter, "counter");
     let ix: TransactionInstruction;
     let remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
 
@@ -396,6 +496,7 @@ cli
       });
       remainingAccounts = await loadSharedRemainingAccounts({
         connection: p.connection,
+        mint: accounts.mint,
         sharingConfig: accounts.sharingConfig,
         quoteMint: config.quoteMint,
       });

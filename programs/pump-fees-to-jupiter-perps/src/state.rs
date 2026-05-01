@@ -14,12 +14,14 @@ pub struct TradeConfig {
     pub custody: Pubkey,
     pub collateral_custody: Pubkey,
     pub max_leverage_bps: u64,
+    pub min_quote_price_usd_e6: u64,
+    pub max_quote_price_usd_e6: u64,
     pub paused: bool,
     pub bump: u8,
 }
 
 impl TradeConfig {
-    pub const SPACE: usize = 8 + 32 + 32 + 32 + 1 + 1 + 32 + 32 + 8 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 32 + 1 + 1 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
 
     pub fn initialize(
         &mut self,
@@ -51,6 +53,8 @@ impl TradeConfig {
         self.custody = params.custody;
         self.collateral_custody = params.collateral_custody;
         self.max_leverage_bps = params.max_leverage_bps;
+        self.min_quote_price_usd_e6 = params.min_quote_price_usd_e6;
+        self.max_quote_price_usd_e6 = params.max_quote_price_usd_e6;
     }
 }
 
@@ -75,6 +79,8 @@ pub struct TradeConfigParams {
     pub custody: Pubkey,
     pub collateral_custody: Pubkey,
     pub max_leverage_bps: u64,
+    pub min_quote_price_usd_e6: u64,
+    pub max_quote_price_usd_e6: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,13 +95,18 @@ pub struct ClaimOpenParams {
 }
 
 impl ClaimOpenParams {
-    pub fn validate(&self, max_leverage_bps: u64) -> Result<()> {
+    pub fn validate(
+        &self,
+        max_leverage_bps: u64,
+        min_quote_price_usd_e6: u64,
+        max_quote_price_usd_e6: u64,
+    ) -> Result<()> {
         require!(
             (MIN_LEVERAGE_BPS..=max_leverage_bps).contains(&self.leverage_bps),
             PumpJupiterError::InvalidLeverage
         );
         require!(
-            self.quote_price_usd_e6 > 0,
+            (min_quote_price_usd_e6..=max_quote_price_usd_e6).contains(&self.quote_price_usd_e6),
             PumpJupiterError::InvalidQuotePrice
         );
         require!(
@@ -163,6 +174,11 @@ impl TradeConfigParams {
         require!(
             (MIN_LEVERAGE_BPS..=MAX_LEVERAGE_BPS).contains(&self.max_leverage_bps),
             PumpJupiterError::InvalidLeverage
+        );
+        require!(
+            self.min_quote_price_usd_e6 > 0
+                && self.max_quote_price_usd_e6 >= self.min_quote_price_usd_e6,
+            PumpJupiterError::InvalidQuotePrice
         );
 
         let expected_custody = self.target_market.custody();

@@ -15,6 +15,8 @@ import {
   TargetMarket,
 } from "./constants";
 
+const MAX_U64 = new BN("18446744073709551615");
+
 export function tradeConfigPda(feeOwner: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("trade-config"), feeOwner.toBuffer()],
@@ -97,6 +99,10 @@ export function jupiterPositionRequestPda(args: {
   position: PublicKey;
   counter: BN;
 }): PublicKey {
+  if (args.counter.isNeg() || args.counter.gt(MAX_U64)) {
+    throw new Error("position request counter must be a u64");
+  }
+
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from("position_request"),
@@ -122,4 +128,3 @@ export function ata(args: {
     ASSOCIATED_TOKEN_PROGRAM_ID,
   );
 }
-

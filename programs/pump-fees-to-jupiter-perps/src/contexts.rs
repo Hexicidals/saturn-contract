@@ -16,8 +16,7 @@ pub struct Ping {}
 pub struct InitializeTradeConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
-    /// CHECK: Stored as the wallet whose claimed fees can be routed into Jupiter.
-    pub fee_owner: UncheckedAccount<'info>,
+    pub fee_owner: Signer<'info>,
     #[account(
         init,
         payer = admin,
@@ -63,11 +62,14 @@ pub struct ClaimSingleAndOpen<'info> {
     #[account(mut)]
     /// CHECK: ATA for (creator_vault, quote_token_program, quote_mint).
     pub creator_vault_token_account: UncheckedAccount<'info>,
-    /// CHECK: SPL Token program for quote_mint.
+    #[account(address = SPL_TOKEN_PROGRAM_ID)]
+    /// CHECK: Canonical SPL Token program for supported quote mints.
     pub quote_token_program: UncheckedAccount<'info>,
-    /// CHECK: Associated Token program.
+    #[account(address = ASSOCIATED_TOKEN_PROGRAM_ID)]
+    /// CHECK: Canonical Associated Token program.
     pub associated_token_program: UncheckedAccount<'info>,
-    /// CHECK: System program.
+    #[account(address = SYSTEM_PROGRAM_ID)]
+    /// CHECK: Canonical System program.
     pub system_program: UncheckedAccount<'info>,
     /// CHECK: Pump event authority PDA.
     pub pump_event_authority: UncheckedAccount<'info>,
@@ -143,11 +145,14 @@ pub struct ClaimSharedAndOpen<'info> {
     #[account(mut)]
     /// CHECK: ATA for (creator_vault, quote_token_program, quote_mint).
     pub creator_vault_quote_token_account: UncheckedAccount<'info>,
-    /// CHECK: SPL Token program for quote_mint.
+    #[account(address = SPL_TOKEN_PROGRAM_ID)]
+    /// CHECK: Canonical SPL Token program for supported quote mints.
     pub quote_token_program: UncheckedAccount<'info>,
-    /// CHECK: Associated Token program.
+    #[account(address = ASSOCIATED_TOKEN_PROGRAM_ID)]
+    /// CHECK: Canonical Associated Token program.
     pub associated_token_program: UncheckedAccount<'info>,
-    /// CHECK: System program.
+    #[account(address = SYSTEM_PROGRAM_ID)]
+    /// CHECK: Canonical System program.
     pub system_program: UncheckedAccount<'info>,
     /// CHECK: Pump event authority PDA.
     pub pump_event_authority: UncheckedAccount<'info>,

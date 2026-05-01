@@ -8,6 +8,8 @@ fn base_params() -> TradeConfigParams {
         custody: JUPITER_SOL_CUSTODY,
         collateral_custody: JUPITER_USDC_CUSTODY,
         max_leverage_bps: 50_000,
+        min_quote_price_usd_e6: 900_000,
+        max_quote_price_usd_e6: 1_100_000,
     }
 }
 
@@ -48,6 +50,8 @@ fn detects_native_quote_configs() {
         custody: JUPITER_SOL_CUSTODY,
         collateral_custody: JUPITER_USDC_CUSTODY,
         max_leverage_bps: 50_000,
+        min_quote_price_usd_e6: 900_000,
+        max_quote_price_usd_e6: 1_100_000,
         paused: false,
         bump: 255,
     };
@@ -72,6 +76,8 @@ fn initializes_and_updates_trade_config() {
         custody: Pubkey::default(),
         collateral_custody: Pubkey::default(),
         max_leverage_bps: 0,
+        min_quote_price_usd_e6: 0,
+        max_quote_price_usd_e6: 0,
         paused: true,
         bump: 0,
     };
@@ -94,6 +100,8 @@ fn initializes_and_updates_trade_config() {
     assert_eq!(config.side, PositionSide::Long);
     assert_eq!(config.collateral_custody, JUPITER_SOL_CUSTODY);
     assert_eq!(config.max_leverage_bps, 75_000);
+    assert_eq!(config.min_quote_price_usd_e6, 900_000);
+    assert_eq!(config.max_quote_price_usd_e6, 1_100_000);
     assert!(config.paused);
 }
 
@@ -120,6 +128,24 @@ fn rejects_invalid_market_custody() {
 }
 
 #[test]
+fn rejects_invalid_quote_price_policy() {
+    let mut params = base_params();
+    params.min_quote_price_usd_e6 = 0;
+    assert!(matches!(
+        params.validate(),
+        Err(error) if error == PumpJupiterError::InvalidQuotePrice.into()
+    ));
+
+    params = base_params();
+    params.min_quote_price_usd_e6 = 1_100_000;
+    params.max_quote_price_usd_e6 = 900_000;
+    assert!(matches!(
+        params.validate(),
+        Err(error) if error == PumpJupiterError::InvalidQuotePrice.into()
+    ));
+}
+
+#[test]
 fn calculates_wsol_claim_delta_from_lamports_and_tokens() {
     let amount = claimed_quote_delta(100, 175, 20, 45, true).unwrap();
     assert_eq!(amount, 100);
@@ -135,14 +161,14 @@ fn excludes_lamports_for_non_native_quote_delta() {
 fn validates_claim_bounds() {
     let params = claim_params();
 
-    assert!(params.validate(50_000).is_ok());
+    assert!(params.validate(50_000, 900_000, 1_100_000).is_ok());
     assert!(params.validate_claim_amount(15).is_ok());
     assert!(matches!(
         params.validate_claim_amount(9),
         Err(error) if error == PumpJupiterError::ClaimAmountTooSmall.into()
     ));
     assert!(matches!(
-    params.validate_claim_amount(21),
+        params.validate_claim_amount(21),
         Err(error) if error == PumpJupiterError::ClaimAmountTooLarge.into()
     ));
 }
@@ -152,21 +178,28 @@ fn rejects_invalid_claim_open_params() {
     let mut params = claim_params();
     params.leverage_bps = MIN_LEVERAGE_BPS - 1;
     assert!(matches!(
-        params.validate(50_000),
+        params.validate(50_000, 900_000, 1_100_000),
         Err(error) if error == PumpJupiterError::InvalidLeverage.into()
     ));
 
     params = claim_params();
     params.quote_price_usd_e6 = 0;
     assert!(matches!(
-        params.validate(50_000),
+        params.validate(50_000, 900_000, 1_100_000),
+        Err(error) if error == PumpJupiterError::InvalidQuotePrice.into()
+    ));
+
+    params = claim_params();
+    params.quote_price_usd_e6 = 1_200_000;
+    assert!(matches!(
+        params.validate(50_000, 900_000, 1_100_000),
         Err(error) if error == PumpJupiterError::InvalidQuotePrice.into()
     ));
 
     params = claim_params();
     params.price_slippage_usd_e6 = 0;
     assert!(matches!(
-        params.validate(50_000),
+        params.validate(50_000, 900_000, 1_100_000),
         Err(error) if error == PumpJupiterError::InvalidPriceSlippage.into()
     ));
 
@@ -174,7 +207,7 @@ fn rejects_invalid_claim_open_params() {
     params.min_claim_amount = 20;
     params.max_claim_amount = 10;
     assert!(matches!(
-        params.validate(50_000),
+        params.validate(50_000, 900_000, 1_100_000),
         Err(error) if error == PumpJupiterError::InvalidClaimBounds.into()
     ));
 }

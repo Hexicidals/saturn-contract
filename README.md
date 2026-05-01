@@ -17,7 +17,8 @@ npm run test:anchor
 
 `npm run test:anchor` runs the Anchor local-validator suite. The wrapper keeps this
 repo reproducible with the local Anchor/Solana toolchain by copying the generated
-SBF artifact into `target/deploy` before invoking `anchor test --skip-build`.
+SBF artifact into `target/deploy` before invoking `anchor test --skip-build`, and
+removes the generated `.anchor/test-ledger` keypairs before and after the run.
 
 ## Program Flow
 
@@ -55,6 +56,11 @@ npm run cli -- init-config \
   --max-leverage-bps 50000
 ```
 
+`init-config` requires the fee owner to sign, so `<WALLET>` must match the local
+`ANCHOR_WALLET` when using the bundled CLI. USDC configs default to an exact
+`1000000` quote-price policy. WSOL configs, or custom USDC bands, must pass
+`--min-quote-price-usd-e6` and `--max-quote-price-usd-e6`.
+
 Build and simulate a claim/open request:
 
 ```bash
@@ -68,7 +74,7 @@ npm run cli -- claim-open \
   --min-claim-amount 1
 ```
 
-Use `--send` only after the program is deployed on the target cluster and the wallet/config/accounts are funded and initialized. Mainnet simulation against `api.mainnet-beta.solana.com` also requires the custom program to already exist on mainnet.
+Use `--send` only after the program is deployed on the target cluster and the wallet/config/accounts are funded and initialized. Mainnet simulation against `api.mainnet-beta.solana.com` also requires the custom program to already exist on mainnet. Mainnet submission requires both `--send` and `ALLOW_MAINNET_SEND=true`.
 
 ## Notes
 
@@ -76,3 +82,4 @@ Use `--send` only after the program is deployed on the target cluster and the wa
 - Fee-sharing mode reads the Pump Fees sharing config and forwards shareholders as remaining accounts in the exact order required by Pump.
 - If the quote mint differs from the Jupiter collateral mint, pass `--jupiter-minimum-out` from an external quote.
 - The repo intentionally does not submit live mainnet transactions by default.
+- Keep deploy authority keypairs outside the repo tree for real deployments. Anchor-generated `target/deploy/*-keypair.json` files are ignored, but they should still be treated as secrets if reused beyond local testing.

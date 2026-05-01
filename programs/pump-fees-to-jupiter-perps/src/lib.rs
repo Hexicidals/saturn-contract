@@ -62,7 +62,11 @@ pub mod pump_fees_to_jupiter_perps {
     ) -> Result<()> {
         ctx.accounts.validate_config()?;
         options.validate()?;
-        params.validate(ctx.accounts.trade_config.max_leverage_bps)?;
+        params.validate(
+            ctx.accounts.trade_config.max_leverage_bps,
+            ctx.accounts.trade_config.min_quote_price_usd_e6,
+            ctx.accounts.trade_config.max_quote_price_usd_e6,
+        )?;
 
         let before_claim = ClaimBalanceSnapshot::capture(
             &ctx.accounts.fee_owner.to_account_info(),
@@ -112,7 +116,11 @@ pub mod pump_fees_to_jupiter_perps {
         options: ClaimSharedOptions,
     ) -> Result<()> {
         ctx.accounts.validate_config()?;
-        params.validate(ctx.accounts.trade_config.max_leverage_bps)?;
+        params.validate(
+            ctx.accounts.trade_config.max_leverage_bps,
+            ctx.accounts.trade_config.min_quote_price_usd_e6,
+            ctx.accounts.trade_config.max_quote_price_usd_e6,
+        )?;
 
         let before_claim = ClaimBalanceSnapshot::capture(
             &ctx.accounts.fee_owner.to_account_info(),

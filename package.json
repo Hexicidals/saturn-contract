@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "build": "anchor build",
+    "clean:local-ledger": "rm -rf .anchor/test-ledger",
     "cli": "ts-node client/cli.ts",
     "test": "npm run test:anchor",
-    "test:anchor": "anchor build && if [ -f target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so ]; then cp target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so target/deploy/pump_fees_to_jupiter_perps.so; fi && COPYFILE_DISABLE=1 anchor test --skip-build",
+    "test:anchor": "rm -rf .anchor/test-ledger && trap 'rm -rf .anchor/test-ledger' EXIT && anchor build && if [ -f target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so ]; then cp target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so target/deploy/pump_fees_to_jupiter_perps.so; fi && COPYFILE_DISABLE=1 anchor test --skip-build",
     "test:rust": "cargo test -p pump-fees-to-jupiter-perps",
     "test:ts": "mocha -r ts-node/register tests/**/*.ts",
     "typecheck": "tsc --noEmit"

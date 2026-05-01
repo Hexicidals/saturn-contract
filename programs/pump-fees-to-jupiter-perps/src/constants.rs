@@ -6,6 +6,10 @@ pub const MAX_LEVERAGE_BPS: u64 = 2_500_000;
 
 pub const WSOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
 pub const USDC_MINT: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+pub const ASSOCIATED_TOKEN_PROGRAM_ID: Pubkey =
+    pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+pub const SYSTEM_PROGRAM_ID: Pubkey = pubkey!("11111111111111111111111111111111");
 
 pub const JUPITER_SOL_CUSTODY: Pubkey = pubkey!("7xS2gz2bTp3fwCC7knJvUWTEU9Tycczu6VhJYKgi1wdz");
 pub const JUPITER_ETH_CUSTODY: Pubkey = pubkey!("AQCGyheWPLeo6Qp9WpYS9m3Qj479t7R636N9ey1rEjEn");
