@@ -11,7 +11,7 @@ npm install
 anchor build
 npm run typecheck
 npm run test:ts
-cargo test -p pump-fees-to-jupiter-perps
+npm run test:rust
 npm run test:anchor
 ```
 
