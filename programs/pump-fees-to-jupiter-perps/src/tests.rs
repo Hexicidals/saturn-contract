@@ -60,6 +60,44 @@ fn detects_native_quote_configs() {
 }
 
 #[test]
+fn initializes_and_updates_trade_config() {
+    let admin = Pubkey::new_unique();
+    let fee_owner = Pubkey::new_unique();
+    let mut config = TradeConfig {
+        admin: Pubkey::default(),
+        fee_owner: Pubkey::default(),
+        quote_mint: Pubkey::default(),
+        target_market: TargetMarket::Sol,
+        side: PositionSide::Short,
+        custody: Pubkey::default(),
+        collateral_custody: Pubkey::default(),
+        max_leverage_bps: 0,
+        paused: true,
+        bump: 0,
+    };
+
+    config.initialize(admin, fee_owner, base_params(), 200);
+
+    assert_eq!(config.admin, admin);
+    assert_eq!(config.fee_owner, fee_owner);
+    assert_eq!(config.quote_mint, USDC_MINT);
+    assert_eq!(config.bump, 200);
+    assert!(!config.paused);
+
+    let mut params = base_params();
+    params.side = PositionSide::Long;
+    params.collateral_custody = JUPITER_SOL_CUSTODY;
+    params.max_leverage_bps = 75_000;
+
+    config.update(params, true);
+
+    assert_eq!(config.side, PositionSide::Long);
+    assert_eq!(config.collateral_custody, JUPITER_SOL_CUSTODY);
+    assert_eq!(config.max_leverage_bps, 75_000);
+    assert!(config.paused);
+}
+
+#[test]
 fn rejects_unsupported_quote() {
     let mut params = base_params();
     params.quote_mint = Pubkey::new_unique();
