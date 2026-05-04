@@ -110,6 +110,38 @@ fn validates_claim_bounds() {
 }
 
 #[test]
+fn rejects_invalid_claim_open_params() {
+    let mut params = claim_params();
+    params.leverage_bps = MIN_LEVERAGE_BPS - 1;
+    assert!(matches!(
+        params.validate(50_000),
+        Err(error) if error == PumpJupiterError::InvalidLeverage.into()
+    ));
+
+    params = claim_params();
+    params.quote_price_usd_e6 = 0;
+    assert!(matches!(
+        params.validate(50_000),
+        Err(error) if error == PumpJupiterError::InvalidQuotePrice.into()
+    ));
+
+    params = claim_params();
+    params.price_slippage_usd_e6 = 0;
+    assert!(matches!(
+        params.validate(50_000),
+        Err(error) if error == PumpJupiterError::InvalidPriceSlippage.into()
+    ));
+
+    params = claim_params();
+    params.min_claim_amount = 20;
+    params.max_claim_amount = 10;
+    assert!(matches!(
+        params.validate(50_000),
+        Err(error) if error == PumpJupiterError::InvalidClaimBounds.into()
+    ));
+}
+
+#[test]
 fn converts_zero_jupiter_minimum_out_to_none() {
     let mut params = claim_params();
     params.min_claim_amount = 0;
