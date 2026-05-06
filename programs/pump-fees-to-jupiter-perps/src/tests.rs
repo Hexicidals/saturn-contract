@@ -11,6 +11,18 @@ fn base_params() -> TradeConfigParams {
     }
 }
 
+fn claim_params() -> ClaimOpenParams {
+    ClaimOpenParams {
+        leverage_bps: 20_000,
+        quote_price_usd_e6: 1_000_000,
+        price_slippage_usd_e6: 1_000_000,
+        jupiter_minimum_out: 0,
+        position_request_counter: 1,
+        min_claim_amount: 10,
+        max_claim_amount: 20,
+    }
+}
+
 #[test]
 fn validates_supported_short_config() {
     assert!(base_params().validate().is_ok());
@@ -83,15 +95,7 @@ fn excludes_lamports_for_non_native_quote_delta() {
 
 #[test]
 fn validates_claim_bounds() {
-    let params = ClaimOpenParams {
-        leverage_bps: 20_000,
-        quote_price_usd_e6: 1_000_000,
-        price_slippage_usd_e6: 1_000_000,
-        jupiter_minimum_out: 0,
-        position_request_counter: 1,
-        min_claim_amount: 10,
-        max_claim_amount: 20,
-    };
+    let params = claim_params();
 
     assert!(params.validate(50_000).is_ok());
     assert!(params.validate_claim_amount(15).is_ok());
@@ -107,15 +111,9 @@ fn validates_claim_bounds() {
 
 #[test]
 fn converts_zero_jupiter_minimum_out_to_none() {
-    let mut params = ClaimOpenParams {
-        leverage_bps: 20_000,
-        quote_price_usd_e6: 1_000_000,
-        price_slippage_usd_e6: 1_000_000,
-        jupiter_minimum_out: 0,
-        position_request_counter: 1,
-        min_claim_amount: 0,
-        max_claim_amount: 0,
-    };
+    let mut params = claim_params();
+    params.min_claim_amount = 0;
+    params.max_claim_amount = 0;
 
     assert_eq!(params.jupiter_minimum_out(), None);
 
