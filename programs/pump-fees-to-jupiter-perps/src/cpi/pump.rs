@@ -180,8 +180,7 @@ pub fn pump_distribute_creator_fees_v2<'info>(
     initialize_ata: bool,
     remaining_accounts: &[AccountInfo<'info>],
 ) -> Result<()> {
-    let mut data = PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR.to_vec();
-    data.push(u8::from(initialize_ata));
+    let data = encode_pump_distribute_creator_fees_v2(initialize_ata);
 
     let mut metas = vec![
         AccountMeta::new(*accounts.payer.key, true),
@@ -224,6 +223,12 @@ pub fn pump_distribute_creator_fees_v2<'info>(
     invoke(&ix, &account_infos)?;
 
     Ok(())
+}
+
+pub fn encode_pump_distribute_creator_fees_v2(initialize_ata: bool) -> Vec<u8> {
+    let mut data = PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR.to_vec();
+    data.push(u8::from(initialize_ata));
+    data
 }
 
 pub fn remaining_account_metas(accounts: &[AccountInfo<'_>]) -> Vec<AccountMeta> {

@@ -125,10 +125,13 @@ fn converts_zero_jupiter_minimum_out_to_none() {
 
 #[test]
 fn encodes_distribute_creator_fees_v2_data() {
-    let mut data = PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR.to_vec();
-    data.push(1);
+    let data = encode_pump_distribute_creator_fees_v2(true);
 
     assert_eq!(data, vec![255, 203, 19, 79, 244, 68, 8, 159, 1]);
+    assert_eq!(
+        encode_pump_distribute_creator_fees_v2(false),
+        vec![255, 203, 19, 79, 244, 68, 8, 159, 0]
+    );
 }
 
 #[test]
