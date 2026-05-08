@@ -160,7 +160,27 @@ fn encodes_jupiter_create_increase_request_data() {
         &data[0..8],
         &JUPITER_CREATE_INCREASE_POSITION_MARKET_REQUEST_DISCRIMINATOR
     );
-    assert_eq!(data[24], PositionSide::Short.jupiter_side_discriminator());
-    assert_eq!(data[33], 1);
-    assert_eq!(data.len(), 50);
+    assert_eq!(
+        data[JUPITER_INCREASE_REQUEST_SIDE_OFFSET],
+        PositionSide::Short.jupiter_side_discriminator()
+    );
+    assert_eq!(data[JUPITER_INCREASE_REQUEST_MINIMUM_OUT_OPTION_OFFSET], 1);
+    assert_eq!(data.len(), JUPITER_INCREASE_REQUEST_WITH_MINIMUM_OUT_LEN);
+}
+
+#[test]
+fn encodes_jupiter_create_increase_request_without_minimum_out() {
+    let data = encode_jupiter_create_increase_position_market_request(
+        JupiterCreateIncreasePositionMarketRequestParams {
+            size_usd_delta: 30_000_000,
+            collateral_token_delta: 10_000_000,
+            side: PositionSide::Long,
+            price_slippage_usd_e6: 100_000_000,
+            jupiter_minimum_out: None,
+            counter: 42,
+        },
+    );
+
+    assert_eq!(data[JUPITER_INCREASE_REQUEST_MINIMUM_OUT_OPTION_OFFSET], 0);
+    assert_eq!(data.len(), JUPITER_INCREASE_REQUEST_WITHOUT_MINIMUM_OUT_LEN);
 }
