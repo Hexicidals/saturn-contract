@@ -197,8 +197,8 @@ impl TargetMarket {
 impl PositionSide {
     pub fn jupiter_side_discriminator(self) -> u8 {
         match self {
-            PositionSide::Long => 1,
-            PositionSide::Short => 2,
+            PositionSide::Long => JUPITER_SIDE_LONG_DISCRIMINATOR,
+            PositionSide::Short => JUPITER_SIDE_SHORT_DISCRIMINATOR,
         }
     }
 }
