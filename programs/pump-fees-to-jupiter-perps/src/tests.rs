@@ -26,6 +26,28 @@ fn validates_long_collateral_matches_market() {
 }
 
 #[test]
+fn detects_native_quote_configs() {
+    let mut config = TradeConfig {
+        admin: Pubkey::new_unique(),
+        fee_owner: Pubkey::new_unique(),
+        quote_mint: USDC_MINT,
+        target_market: TargetMarket::Sol,
+        side: PositionSide::Short,
+        custody: JUPITER_SOL_CUSTODY,
+        collateral_custody: JUPITER_USDC_CUSTODY,
+        max_leverage_bps: 50_000,
+        paused: false,
+        bump: 255,
+    };
+    assert!(!config.uses_native_quote());
+
+    let mut params = base_params();
+    params.quote_mint = WSOL_MINT;
+    config.update(params, false);
+    assert!(config.uses_native_quote());
+}
+
+#[test]
 fn rejects_unsupported_quote() {
     let mut params = base_params();
     params.quote_mint = Pubkey::new_unique();

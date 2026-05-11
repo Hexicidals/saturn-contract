@@ -45,7 +45,7 @@ pub fn create_jupiter_position_request_after_claim<'info>(
     params: &ClaimOpenParams,
     deltas: ClaimDeltas,
 ) -> Result<u64> {
-    if config.quote_mint == WSOL_MINT && deltas.lamports > 0 {
+    if config.uses_native_quote() && deltas.lamports > 0 {
         wrap_lamports_to_wsol(wrap_accounts, deltas.lamports)?;
     }
 

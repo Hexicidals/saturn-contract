@@ -82,7 +82,7 @@ pub mod pump_fees_to_jupiter_perps {
         let deltas = before_claim.deltas(
             &ctx.accounts.fee_owner.to_account_info(),
             &ctx.accounts.fee_owner_quote_token_account,
-            ctx.accounts.trade_config.quote_mint == WSOL_MINT,
+            ctx.accounts.trade_config.uses_native_quote(),
         )?;
         params.validate_claim_amount(deltas.total)?;
 
@@ -135,7 +135,7 @@ pub mod pump_fees_to_jupiter_perps {
         let deltas = before_claim.deltas(
             &ctx.accounts.fee_owner.to_account_info(),
             &ctx.accounts.fee_owner_quote_token_account,
-            ctx.accounts.trade_config.quote_mint == WSOL_MINT,
+            ctx.accounts.trade_config.uses_native_quote(),
         )?;
         params.validate_claim_amount(deltas.total)?;
 

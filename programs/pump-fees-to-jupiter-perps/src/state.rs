@@ -40,6 +40,10 @@ impl TradeConfig {
         self.paused = paused;
     }
 
+    pub fn uses_native_quote(&self) -> bool {
+        self.quote_mint == WSOL_MINT
+    }
+
     fn apply_params(&mut self, params: TradeConfigParams) {
         self.quote_mint = params.quote_mint;
         self.target_market = params.target_market;
