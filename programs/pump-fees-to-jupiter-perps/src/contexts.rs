@@ -3,7 +3,8 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::cpi::{
     JupiterCreateIncreasePositionMarketRequestAccounts, PumpAmmCollectCoinCreatorFeeAccounts,
-    PumpCollectCreatorFeeV2Accounts, WrapWsolAccounts,
+    PumpAmmTransferCreatorFeesToPumpV2Accounts, PumpCollectCreatorFeeV2Accounts,
+    PumpDistributeCreatorFeesV2Accounts, WrapWsolAccounts,
 };
 use crate::errors::PumpJupiterError;
 use crate::state::TradeConfig;
@@ -300,6 +301,46 @@ impl<'info> ClaimSharedAndOpen<'info> {
             token_program: self.quote_token_program.to_account_info(),
             associated_token_program: self.associated_token_program.to_account_info(),
             system_program: self.system_program.to_account_info(),
+        }
+    }
+
+    pub fn pump_amm_transfer_creator_fees_to_pump_v2_accounts(
+        &self,
+    ) -> PumpAmmTransferCreatorFeesToPumpV2Accounts<'info> {
+        PumpAmmTransferCreatorFeesToPumpV2Accounts {
+            payer: self.fee_owner.to_account_info(),
+            quote_mint: self.quote_mint.to_account_info(),
+            token_program: self.quote_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            coin_creator: self.sharing_config.to_account_info(),
+            coin_creator_vault_authority: self.coin_creator_vault_authority.to_account_info(),
+            coin_creator_vault_ata: self.coin_creator_vault_ata.to_account_info(),
+            pump_creator_vault: self.creator_vault.to_account_info(),
+            pump_creator_vault_ata: self.creator_vault_quote_token_account.to_account_info(),
+            event_authority: self.pump_amm_event_authority.to_account_info(),
+            program: self.pump_amm_program.to_account_info(),
+        }
+    }
+
+    pub fn pump_distribute_creator_fees_v2_accounts(
+        &self,
+    ) -> PumpDistributeCreatorFeesV2Accounts<'info> {
+        PumpDistributeCreatorFeesV2Accounts {
+            payer: self.fee_owner.to_account_info(),
+            mint: self.mint.to_account_info(),
+            bonding_curve: self.bonding_curve.to_account_info(),
+            sharing_config: self.sharing_config.to_account_info(),
+            creator_vault: self.creator_vault.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            event_authority: self.pump_event_authority.to_account_info(),
+            program: self.pump_program.to_account_info(),
+            creator_vault_quote_token_account: self
+                .creator_vault_quote_token_account
+                .to_account_info(),
+            quote_mint: self.quote_mint.to_account_info(),
+            quote_token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
         }
     }
 }

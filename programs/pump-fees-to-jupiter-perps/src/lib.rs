@@ -121,50 +121,13 @@ pub mod pump_fees_to_jupiter_perps {
 
         if options.sweep_amm {
             pump_amm_transfer_creator_fees_to_pump_v2(
-                PumpAmmTransferCreatorFeesToPumpV2Accounts {
-                    payer: ctx.accounts.fee_owner.to_account_info(),
-                    quote_mint: ctx.accounts.quote_mint.to_account_info(),
-                    token_program: ctx.accounts.quote_token_program.to_account_info(),
-                    system_program: ctx.accounts.system_program.to_account_info(),
-                    associated_token_program: ctx
-                        .accounts
-                        .associated_token_program
-                        .to_account_info(),
-                    coin_creator: ctx.accounts.sharing_config.to_account_info(),
-                    coin_creator_vault_authority: ctx
-                        .accounts
-                        .coin_creator_vault_authority
-                        .to_account_info(),
-                    coin_creator_vault_ata: ctx.accounts.coin_creator_vault_ata.to_account_info(),
-                    pump_creator_vault: ctx.accounts.creator_vault.to_account_info(),
-                    pump_creator_vault_ata: ctx
-                        .accounts
-                        .creator_vault_quote_token_account
-                        .to_account_info(),
-                    event_authority: ctx.accounts.pump_amm_event_authority.to_account_info(),
-                    program: ctx.accounts.pump_amm_program.to_account_info(),
-                },
+                ctx.accounts
+                    .pump_amm_transfer_creator_fees_to_pump_v2_accounts(),
             )?;
         }
 
         pump_distribute_creator_fees_v2(
-            PumpDistributeCreatorFeesV2Accounts {
-                payer: ctx.accounts.fee_owner.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                bonding_curve: ctx.accounts.bonding_curve.to_account_info(),
-                sharing_config: ctx.accounts.sharing_config.to_account_info(),
-                creator_vault: ctx.accounts.creator_vault.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                event_authority: ctx.accounts.pump_event_authority.to_account_info(),
-                program: ctx.accounts.pump_program.to_account_info(),
-                creator_vault_quote_token_account: ctx
-                    .accounts
-                    .creator_vault_quote_token_account
-                    .to_account_info(),
-                quote_mint: ctx.accounts.quote_mint.to_account_info(),
-                quote_token_program: ctx.accounts.quote_token_program.to_account_info(),
-                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-            },
+            ctx.accounts.pump_distribute_creator_fees_v2_accounts(),
             options.initialize_shareholder_atas,
             ctx.remaining_accounts,
         )?;
