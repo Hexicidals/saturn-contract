@@ -1,7 +1,10 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::*;
-use crate::cpi::{JupiterCreateIncreasePositionMarketRequestAccounts, WrapWsolAccounts};
+use crate::cpi::{
+    JupiterCreateIncreasePositionMarketRequestAccounts, PumpAmmCollectCoinCreatorFeeAccounts,
+    PumpCollectCreatorFeeV2Accounts, WrapWsolAccounts,
+};
 use crate::errors::PumpJupiterError;
 use crate::state::TradeConfig;
 
@@ -227,6 +230,36 @@ impl<'info> ClaimSingleAndOpen<'info> {
             token_program: self.quote_token_program.to_account_info(),
             associated_token_program: self.associated_token_program.to_account_info(),
             system_program: self.system_program.to_account_info(),
+        }
+    }
+
+    pub fn pump_collect_creator_fee_v2_accounts(&self) -> PumpCollectCreatorFeeV2Accounts<'info> {
+        PumpCollectCreatorFeeV2Accounts {
+            creator: self.fee_owner.to_account_info(),
+            creator_token_account: self.fee_owner_quote_token_account.to_account_info(),
+            creator_vault: self.creator_vault.to_account_info(),
+            creator_vault_token_account: self.creator_vault_token_account.to_account_info(),
+            quote_mint: self.quote_mint.to_account_info(),
+            quote_token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            event_authority: self.pump_event_authority.to_account_info(),
+            program: self.pump_program.to_account_info(),
+        }
+    }
+
+    pub fn pump_amm_collect_coin_creator_fee_accounts(
+        &self,
+    ) -> PumpAmmCollectCoinCreatorFeeAccounts<'info> {
+        PumpAmmCollectCoinCreatorFeeAccounts {
+            quote_mint: self.quote_mint.to_account_info(),
+            quote_token_program: self.quote_token_program.to_account_info(),
+            coin_creator: self.fee_owner.to_account_info(),
+            coin_creator_vault_authority: self.coin_creator_vault_authority.to_account_info(),
+            coin_creator_vault_ata: self.coin_creator_vault_ata.to_account_info(),
+            coin_creator_token_account: self.fee_owner_quote_token_account.to_account_info(),
+            event_authority: self.pump_amm_event_authority.to_account_info(),
+            program: self.pump_amm_program.to_account_info(),
         }
     }
 }

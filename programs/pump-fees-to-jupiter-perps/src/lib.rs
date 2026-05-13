@@ -70,40 +70,13 @@ pub mod pump_fees_to_jupiter_perps {
         )?;
 
         if options.collect_bonding_curve {
-            pump_collect_creator_fee_v2(PumpCollectCreatorFeeV2Accounts {
-                creator: ctx.accounts.fee_owner.to_account_info(),
-                creator_token_account: ctx.accounts.fee_owner_quote_token_account.to_account_info(),
-                creator_vault: ctx.accounts.creator_vault.to_account_info(),
-                creator_vault_token_account: ctx
-                    .accounts
-                    .creator_vault_token_account
-                    .to_account_info(),
-                quote_mint: ctx.accounts.quote_mint.to_account_info(),
-                quote_token_program: ctx.accounts.quote_token_program.to_account_info(),
-                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                event_authority: ctx.accounts.pump_event_authority.to_account_info(),
-                program: ctx.accounts.pump_program.to_account_info(),
-            })?;
+            pump_collect_creator_fee_v2(ctx.accounts.pump_collect_creator_fee_v2_accounts())?;
         }
 
         if options.collect_amm {
-            pump_amm_collect_coin_creator_fee(PumpAmmCollectCoinCreatorFeeAccounts {
-                quote_mint: ctx.accounts.quote_mint.to_account_info(),
-                quote_token_program: ctx.accounts.quote_token_program.to_account_info(),
-                coin_creator: ctx.accounts.fee_owner.to_account_info(),
-                coin_creator_vault_authority: ctx
-                    .accounts
-                    .coin_creator_vault_authority
-                    .to_account_info(),
-                coin_creator_vault_ata: ctx.accounts.coin_creator_vault_ata.to_account_info(),
-                coin_creator_token_account: ctx
-                    .accounts
-                    .fee_owner_quote_token_account
-                    .to_account_info(),
-                event_authority: ctx.accounts.pump_amm_event_authority.to_account_info(),
-                program: ctx.accounts.pump_amm_program.to_account_info(),
-            })?;
+            pump_amm_collect_coin_creator_fee(
+                ctx.accounts.pump_amm_collect_coin_creator_fee_accounts(),
+            )?;
         }
 
         let deltas = before_claim.deltas(
