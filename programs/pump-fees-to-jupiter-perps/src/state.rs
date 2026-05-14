@@ -20,6 +20,34 @@ pub struct TradeConfig {
 
 impl TradeConfig {
     pub const SPACE: usize = 8 + 32 + 32 + 32 + 1 + 1 + 32 + 32 + 8 + 1 + 1;
+
+    pub fn initialize(
+        &mut self,
+        admin: Pubkey,
+        fee_owner: Pubkey,
+        params: TradeConfigParams,
+        bump: u8,
+    ) {
+        self.admin = admin;
+        self.fee_owner = fee_owner;
+        self.apply_params(params);
+        self.paused = false;
+        self.bump = bump;
+    }
+
+    pub fn update(&mut self, params: TradeConfigParams, paused: bool) {
+        self.apply_params(params);
+        self.paused = paused;
+    }
+
+    fn apply_params(&mut self, params: TradeConfigParams) {
+        self.quote_mint = params.quote_mint;
+        self.target_market = params.target_market;
+        self.side = params.side;
+        self.custody = params.custody;
+        self.collateral_custody = params.collateral_custody;
+        self.max_leverage_bps = params.max_leverage_bps;
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]

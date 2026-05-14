@@ -33,17 +33,12 @@ pub mod pump_fees_to_jupiter_perps {
     ) -> Result<()> {
         params.validate()?;
 
-        let config = &mut ctx.accounts.trade_config;
-        config.admin = ctx.accounts.admin.key();
-        config.fee_owner = ctx.accounts.fee_owner.key();
-        config.quote_mint = params.quote_mint;
-        config.target_market = params.target_market;
-        config.side = params.side;
-        config.custody = params.custody;
-        config.collateral_custody = params.collateral_custody;
-        config.max_leverage_bps = params.max_leverage_bps;
-        config.paused = false;
-        config.bump = ctx.bumps.trade_config;
+        ctx.accounts.trade_config.initialize(
+            ctx.accounts.admin.key(),
+            ctx.accounts.fee_owner.key(),
+            params,
+            ctx.bumps.trade_config,
+        );
 
         Ok(())
     }
@@ -55,14 +50,7 @@ pub mod pump_fees_to_jupiter_perps {
     ) -> Result<()> {
         params.validate()?;
 
-        let config = &mut ctx.accounts.trade_config;
-        config.quote_mint = params.quote_mint;
-        config.target_market = params.target_market;
-        config.side = params.side;
-        config.custody = params.custody;
-        config.collateral_custody = params.collateral_custody;
-        config.max_leverage_bps = params.max_leverage_bps;
-        config.paused = paused;
+        ctx.accounts.trade_config.update(params, paused);
 
         Ok(())
     }
