@@ -90,6 +90,14 @@ impl ClaimOpenParams {
         }
         Ok(())
     }
+
+    pub fn jupiter_minimum_out(&self) -> Option<u64> {
+        if self.jupiter_minimum_out == 0 {
+            None
+        } else {
+            Some(self.jupiter_minimum_out)
+        }
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]

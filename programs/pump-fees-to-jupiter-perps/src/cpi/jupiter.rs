@@ -63,11 +63,7 @@ pub fn create_jupiter_position_request_after_claim<'info>(
             collateral_token_delta: deltas.total,
             side: config.side,
             price_slippage_usd_e6: params.price_slippage_usd_e6,
-            jupiter_minimum_out: if params.jupiter_minimum_out == 0 {
-                None
-            } else {
-                Some(params.jupiter_minimum_out)
-            },
+            jupiter_minimum_out: params.jupiter_minimum_out(),
             counter: params.position_request_counter,
         },
     )?;

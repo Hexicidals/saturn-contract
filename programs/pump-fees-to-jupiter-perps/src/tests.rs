@@ -78,9 +78,27 @@ fn validates_claim_bounds() {
         Err(error) if error == PumpJupiterError::ClaimAmountTooSmall.into()
     ));
     assert!(matches!(
-        params.validate_claim_amount(21),
+    params.validate_claim_amount(21),
         Err(error) if error == PumpJupiterError::ClaimAmountTooLarge.into()
     ));
+}
+
+#[test]
+fn converts_zero_jupiter_minimum_out_to_none() {
+    let mut params = ClaimOpenParams {
+        leverage_bps: 20_000,
+        quote_price_usd_e6: 1_000_000,
+        price_slippage_usd_e6: 1_000_000,
+        jupiter_minimum_out: 0,
+        position_request_counter: 1,
+        min_claim_amount: 0,
+        max_claim_amount: 0,
+    };
+
+    assert_eq!(params.jupiter_minimum_out(), None);
+
+    params.jupiter_minimum_out = 99;
+    assert_eq!(params.jupiter_minimum_out(), Some(99));
 }
 
 #[test]
