@@ -10,6 +10,39 @@ pub struct ClaimDeltas {
     pub total: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimBalanceSnapshot {
+    lamports: u64,
+    tokens: u64,
+}
+
+impl ClaimBalanceSnapshot {
+    pub fn capture(
+        owner: &AccountInfo<'_>,
+        quote_token_account: &UncheckedAccount<'_>,
+    ) -> Result<Self> {
+        Ok(Self {
+            lamports: owner.lamports(),
+            tokens: token_amount(quote_token_account)?,
+        })
+    }
+
+    pub fn deltas(
+        self,
+        owner: &AccountInfo<'_>,
+        quote_token_account: &UncheckedAccount<'_>,
+        include_lamports: bool,
+    ) -> Result<ClaimDeltas> {
+        claim_deltas(
+            self.lamports,
+            owner.lamports(),
+            self.tokens,
+            token_amount(quote_token_account)?,
+            include_lamports,
+        )
+    }
+}
+
 pub fn token_amount(account: &UncheckedAccount<'_>) -> Result<u64> {
     let data = account.try_borrow_data()?;
     if data.is_empty() {

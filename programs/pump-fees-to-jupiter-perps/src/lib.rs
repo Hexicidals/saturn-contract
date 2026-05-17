@@ -76,8 +76,10 @@ pub mod pump_fees_to_jupiter_perps {
         options.validate()?;
         params.validate(ctx.accounts.trade_config.max_leverage_bps)?;
 
-        let before_lamports = ctx.accounts.fee_owner.to_account_info().lamports();
-        let before_tokens = token_amount(&ctx.accounts.fee_owner_quote_token_account)?;
+        let before_claim = ClaimBalanceSnapshot::capture(
+            &ctx.accounts.fee_owner.to_account_info(),
+            &ctx.accounts.fee_owner_quote_token_account,
+        )?;
 
         if options.collect_bonding_curve {
             pump_collect_creator_fee_v2(PumpCollectCreatorFeeV2Accounts {
@@ -116,11 +118,9 @@ pub mod pump_fees_to_jupiter_perps {
             })?;
         }
 
-        let deltas = claim_deltas(
-            before_lamports,
-            ctx.accounts.fee_owner.to_account_info().lamports(),
-            before_tokens,
-            token_amount(&ctx.accounts.fee_owner_quote_token_account)?,
+        let deltas = before_claim.deltas(
+            &ctx.accounts.fee_owner.to_account_info(),
+            &ctx.accounts.fee_owner_quote_token_account,
             ctx.accounts.trade_config.quote_mint == WSOL_MINT,
         )?;
         params.validate_claim_amount(deltas.total)?;
@@ -153,8 +153,10 @@ pub mod pump_fees_to_jupiter_perps {
         ctx.accounts.validate_config()?;
         params.validate(ctx.accounts.trade_config.max_leverage_bps)?;
 
-        let before_lamports = ctx.accounts.fee_owner.to_account_info().lamports();
-        let before_tokens = token_amount(&ctx.accounts.fee_owner_quote_token_account)?;
+        let before_claim = ClaimBalanceSnapshot::capture(
+            &ctx.accounts.fee_owner.to_account_info(),
+            &ctx.accounts.fee_owner_quote_token_account,
+        )?;
 
         if options.sweep_amm {
             pump_amm_transfer_creator_fees_to_pump_v2(
@@ -206,11 +208,9 @@ pub mod pump_fees_to_jupiter_perps {
             ctx.remaining_accounts,
         )?;
 
-        let deltas = claim_deltas(
-            before_lamports,
-            ctx.accounts.fee_owner.to_account_info().lamports(),
-            before_tokens,
-            token_amount(&ctx.accounts.fee_owner_quote_token_account)?,
+        let deltas = before_claim.deltas(
+            &ctx.accounts.fee_owner.to_account_info(),
+            &ctx.accounts.fee_owner_quote_token_account,
             ctx.accounts.trade_config.quote_mint == WSOL_MINT,
         )?;
         params.validate_claim_amount(deltas.total)?;
