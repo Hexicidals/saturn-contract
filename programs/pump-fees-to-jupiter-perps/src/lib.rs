@@ -133,16 +133,12 @@ pub mod pump_fees_to_jupiter_perps {
             deltas,
         )?;
 
-        emit!(FeesClaimed {
+        emit_claim_open_events(ClaimOpenEventFields {
             fee_owner: ctx.accounts.fee_owner.key(),
             quote_mint: ctx.accounts.trade_config.quote_mint,
-            amount: deltas.total,
-        });
-        emit!(JupiterPositionRequestCreated {
-            fee_owner: ctx.accounts.fee_owner.key(),
             position: ctx.accounts.position.key(),
             position_request: ctx.accounts.position_request.key(),
-            collateral_token_delta: deltas.total,
+            deltas,
             size_usd_delta,
         });
 
@@ -227,16 +223,12 @@ pub mod pump_fees_to_jupiter_perps {
             deltas,
         )?;
 
-        emit!(FeesClaimed {
+        emit_claim_open_events(ClaimOpenEventFields {
             fee_owner: ctx.accounts.fee_owner.key(),
             quote_mint: ctx.accounts.trade_config.quote_mint,
-            amount: deltas.total,
-        });
-        emit!(JupiterPositionRequestCreated {
-            fee_owner: ctx.accounts.fee_owner.key(),
             position: ctx.accounts.position.key(),
             position_request: ctx.accounts.position_request.key(),
-            collateral_token_delta: deltas.total,
+            deltas,
             size_usd_delta,
         });
 
