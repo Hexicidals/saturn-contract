@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::*;
+use crate::cpi::{JupiterCreateIncreasePositionMarketRequestAccounts, WrapWsolAccounts};
 use crate::errors::PumpJupiterError;
 use crate::state::TradeConfig;
 
@@ -195,11 +196,77 @@ impl<'info> ClaimSingleAndOpen<'info> {
         require!(!self.trade_config.paused, PumpJupiterError::ConfigPaused);
         Ok(())
     }
+
+    pub fn jupiter_accounts(&self) -> JupiterCreateIncreasePositionMarketRequestAccounts<'info> {
+        JupiterCreateIncreasePositionMarketRequestAccounts {
+            owner: self.fee_owner.to_account_info(),
+            funding_account: self.fee_owner_quote_token_account.to_account_info(),
+            perpetuals: self.perpetuals.to_account_info(),
+            pool: self.pool.to_account_info(),
+            position: self.position.to_account_info(),
+            position_request: self.position_request.to_account_info(),
+            position_request_ata: self.position_request_ata.to_account_info(),
+            custody: self.custody.to_account_info(),
+            collateral_custody: self.collateral_custody.to_account_info(),
+            input_mint: self.quote_mint.to_account_info(),
+            referral: self.referral.to_account_info(),
+            token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            event_authority: self.jupiter_event_authority.to_account_info(),
+            program: self.jupiter_program.to_account_info(),
+        }
+    }
+
+    pub fn wrap_wsol_accounts(&self) -> WrapWsolAccounts<'info> {
+        WrapWsolAccounts {
+            payer: self.fee_owner.to_account_info(),
+            owner: self.fee_owner.to_account_info(),
+            wsol_token_account: self.fee_owner_quote_token_account.to_account_info(),
+            wsol_mint: self.quote_mint.to_account_info(),
+            token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+        }
+    }
 }
 
 impl<'info> ClaimSharedAndOpen<'info> {
     pub fn validate_config(&self) -> Result<()> {
         require!(!self.trade_config.paused, PumpJupiterError::ConfigPaused);
         Ok(())
+    }
+
+    pub fn jupiter_accounts(&self) -> JupiterCreateIncreasePositionMarketRequestAccounts<'info> {
+        JupiterCreateIncreasePositionMarketRequestAccounts {
+            owner: self.fee_owner.to_account_info(),
+            funding_account: self.fee_owner_quote_token_account.to_account_info(),
+            perpetuals: self.perpetuals.to_account_info(),
+            pool: self.pool.to_account_info(),
+            position: self.position.to_account_info(),
+            position_request: self.position_request.to_account_info(),
+            position_request_ata: self.position_request_ata.to_account_info(),
+            custody: self.custody.to_account_info(),
+            collateral_custody: self.collateral_custody.to_account_info(),
+            input_mint: self.quote_mint.to_account_info(),
+            referral: self.referral.to_account_info(),
+            token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+            event_authority: self.jupiter_event_authority.to_account_info(),
+            program: self.jupiter_program.to_account_info(),
+        }
+    }
+
+    pub fn wrap_wsol_accounts(&self) -> WrapWsolAccounts<'info> {
+        WrapWsolAccounts {
+            payer: self.fee_owner.to_account_info(),
+            owner: self.fee_owner.to_account_info(),
+            wsol_token_account: self.fee_owner_quote_token_account.to_account_info(),
+            wsol_mint: self.quote_mint.to_account_info(),
+            token_program: self.quote_token_program.to_account_info(),
+            associated_token_program: self.associated_token_program.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+        }
     }
 }
