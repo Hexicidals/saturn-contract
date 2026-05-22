@@ -5,7 +5,7 @@ use anchor_lang::solana_program::{
     system_instruction,
 };
 
-declare_id!("F3WS96pF3QCpovpw4hcEr1cvmroNYuEZqKYg9G8n9Sw1");
+declare_id!("FjDSgr7sF8o3rwqnSp9m87xjEX18XxgWELhNVxwVkjDz");
 
 pub const TRADE_CONFIG_SEED: &[u8] = b"trade-config";
 pub const MIN_LEVERAGE_BPS: u64 = 10_000;

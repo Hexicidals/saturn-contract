@@ -5,7 +5,8 @@
   "scripts": {
     "build": "anchor build",
     "cli": "ts-node client/cli.ts",
-    "test": "anchor test",
+    "test": "npm run test:anchor",
+    "test:anchor": "anchor build && if [ -f target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so ]; then cp target/sbpf-solana-solana/release/pump_fees_to_jupiter_perps.so target/deploy/pump_fees_to_jupiter_perps.so; fi && COPYFILE_DISABLE=1 anchor test --skip-build",
     "test:ts": "mocha -r ts-node/register tests/**/*.ts",
     "typecheck": "tsc --noEmit"
   },

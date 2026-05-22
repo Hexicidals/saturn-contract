@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 
 export const PROGRAM_ID = new PublicKey(
-  "F3WS96pF3QCpovpw4hcEr1cvmroNYuEZqKYg9G8n9Sw1",
+  "FjDSgr7sF8o3rwqnSp9m87xjEX18XxgWELhNVxwVkjDz",
 );
 
 export const PUMP_PROGRAM_ID = new PublicKey(
@@ -66,4 +66,3 @@ export const SYSTEM_PROGRAM_ID = new PublicKey(
 export type TargetMarket = keyof typeof JUPITER_MARKET_MINTS;
 export type PositionSide = "long" | "short";
 export type ClaimMode = "single" | "shared";
-

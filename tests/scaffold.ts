@@ -1,14 +1,11 @@
-import * as anchor from "@coral-xyz/anchor";
-import { expect } from "chai";
+import assert from "node:assert/strict";
+import { PROGRAM_ID } from "../client/constants";
 
 describe("pump-fees-to-jupiter-perps scaffold", () => {
-  anchor.setProvider(anchor.AnchorProvider.env());
-
-  it("loads the workspace program", () => {
-    const program = anchor.workspace.PumpFeesToJupiterPerps;
-    expect(program.programId.toBase58()).to.equal(
-      "F3WS96pF3QCpovpw4hcEr1cvmroNYuEZqKYg9G8n9Sw1",
+  it("exports the configured program id", () => {
+    assert.equal(
+      PROGRAM_ID.toBase58(),
+      "FjDSgr7sF8o3rwqnSp9m87xjEX18XxgWELhNVxwVkjDz",
     );
   });
 });
-

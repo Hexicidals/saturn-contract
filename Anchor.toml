@@ -1,9 +1,11 @@
+[toolchain]
+
 [features]
 resolution = true
 skip-lint = false
 
 [programs.localnet]
-pump_fees_to_jupiter_perps = "F3WS96pF3QCpovpw4hcEr1cvmroNYuEZqKYg9G8n9Sw1"
+pump_fees_to_jupiter_perps = "FjDSgr7sF8o3rwqnSp9m87xjEX18XxgWELhNVxwVkjDz"
 
 [registry]
 url = "https://api.apr.dev"
@@ -14,4 +16,3 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "npm run test:ts"
-
