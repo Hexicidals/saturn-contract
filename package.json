@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "anchor build",
+    "cli": "ts-node client/cli.ts",
     "test": "anchor test",
     "test:ts": "mocha -r ts-node/register tests/**/*.ts",
     "typecheck": "tsc --noEmit"
@@ -25,4 +26,3 @@
     "typescript": "^5.9.3"
   }
 }
-
