@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::{AccountMeta, Instruction},
     program::invoke,
+    system_instruction,
 };
 
 declare_id!("F3WS96pF3QCpovpw4hcEr1cvmroNYuEZqKYg9G8n9Sw1");
@@ -20,6 +21,11 @@ pub const JUPITER_USDC_CUSTODY: Pubkey = pubkey!("G18jKKXQwBbrHeiK3C9MRXhkHsLHf7
 
 pub const PUMP_PROGRAM_ID: Pubkey = pubkey!("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 pub const PUMP_AMM_PROGRAM_ID: Pubkey = pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+pub const JUPITER_PERPETUALS_PROGRAM_ID: Pubkey =
+    pubkey!("PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu");
+pub const JUPITER_PERPETUALS_EVENT_AUTHORITY: Pubkey =
+    pubkey!("37hJBDnntwqhGbK7L6M1bLyvccj4u55CCUiLPdYkiqBN");
+pub const JLP_POOL_ACCOUNT: Pubkey = pubkey!("5BUwFW4nRbftYTDMbgxykoFWqWHPzahFSNAaaaJtVKsq");
 
 pub const PUMP_COLLECT_CREATOR_FEE_V2_DISCRIMINATOR: [u8; 8] =
     [207, 17, 138, 242, 4, 34, 19, 56];
@@ -29,9 +35,16 @@ pub const PUMP_AMM_TRANSFER_CREATOR_FEES_TO_PUMP_V2_DISCRIMINATOR: [u8; 8] =
     [1, 33, 78, 185, 33, 67, 44, 92];
 pub const PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR: [u8; 8] =
     [255, 203, 19, 79, 244, 68, 8, 159];
+pub const JUPITER_CREATE_INCREASE_POSITION_MARKET_REQUEST_DISCRIMINATOR: [u8; 8] =
+    [184, 85, 199, 24, 105, 171, 156, 56];
+pub const ASSOCIATED_TOKEN_CREATE_IDEMPOTENT_DISCRIMINATOR: u8 = 1;
+pub const SPL_TOKEN_SYNC_NATIVE_DISCRIMINATOR: u8 = 17;
 
 const SPL_TOKEN_AMOUNT_OFFSET: usize = 64;
 const SPL_TOKEN_AMOUNT_END: usize = 72;
+const BPS_DENOMINATOR: u128 = 10_000;
+const USD_DECIMALS_DENOMINATOR: u128 = 1_000_000;
+const WSOL_DECIMALS_DENOMINATOR: u128 = 1_000_000_000;
 
 #[program]
 pub mod pump_fees_to_jupiter_perps {
@@ -130,19 +143,59 @@ pub mod pump_fees_to_jupiter_perps {
             })?;
         }
 
-        let claimed_amount = claimed_quote_delta(
+        let deltas = claim_deltas(
             before_lamports,
             ctx.accounts.fee_owner.to_account_info().lamports(),
             before_tokens,
             token_amount(&ctx.accounts.fee_owner_quote_token_account)?,
             ctx.accounts.trade_config.quote_mint == WSOL_MINT,
         )?;
-        params.validate_claim_amount(claimed_amount)?;
+        params.validate_claim_amount(deltas.total)?;
+
+        let size_usd_delta = create_jupiter_position_request_after_claim(
+            JupiterCreateIncreasePositionMarketRequestAccounts {
+                owner: ctx.accounts.fee_owner.to_account_info(),
+                funding_account: ctx.accounts.fee_owner_quote_token_account.to_account_info(),
+                perpetuals: ctx.accounts.perpetuals.to_account_info(),
+                pool: ctx.accounts.pool.to_account_info(),
+                position: ctx.accounts.position.to_account_info(),
+                position_request: ctx.accounts.position_request.to_account_info(),
+                position_request_ata: ctx.accounts.position_request_ata.to_account_info(),
+                custody: ctx.accounts.custody.to_account_info(),
+                collateral_custody: ctx.accounts.collateral_custody.to_account_info(),
+                input_mint: ctx.accounts.quote_mint.to_account_info(),
+                referral: ctx.accounts.referral.to_account_info(),
+                token_program: ctx.accounts.quote_token_program.to_account_info(),
+                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                event_authority: ctx.accounts.jupiter_event_authority.to_account_info(),
+                program: ctx.accounts.jupiter_program.to_account_info(),
+            },
+            WrapWsolAccounts {
+                payer: ctx.accounts.fee_owner.to_account_info(),
+                owner: ctx.accounts.fee_owner.to_account_info(),
+                wsol_token_account: ctx.accounts.fee_owner_quote_token_account.to_account_info(),
+                wsol_mint: ctx.accounts.quote_mint.to_account_info(),
+                token_program: ctx.accounts.quote_token_program.to_account_info(),
+                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            },
+            &ctx.accounts.trade_config,
+            &params,
+            deltas,
+        )?;
 
         emit!(FeesClaimed {
             fee_owner: ctx.accounts.fee_owner.key(),
             quote_mint: ctx.accounts.trade_config.quote_mint,
-            amount: claimed_amount,
+            amount: deltas.total,
+        });
+        emit!(JupiterPositionRequestCreated {
+            fee_owner: ctx.accounts.fee_owner.key(),
+            position: ctx.accounts.position.key(),
+            position_request: ctx.accounts.position_request.key(),
+            collateral_token_delta: deltas.total,
+            size_usd_delta,
         });
 
         Ok(())
@@ -209,19 +262,59 @@ pub mod pump_fees_to_jupiter_perps {
             ctx.remaining_accounts,
         )?;
 
-        let claimed_amount = claimed_quote_delta(
+        let deltas = claim_deltas(
             before_lamports,
             ctx.accounts.fee_owner.to_account_info().lamports(),
             before_tokens,
             token_amount(&ctx.accounts.fee_owner_quote_token_account)?,
             ctx.accounts.trade_config.quote_mint == WSOL_MINT,
         )?;
-        params.validate_claim_amount(claimed_amount)?;
+        params.validate_claim_amount(deltas.total)?;
+
+        let size_usd_delta = create_jupiter_position_request_after_claim(
+            JupiterCreateIncreasePositionMarketRequestAccounts {
+                owner: ctx.accounts.fee_owner.to_account_info(),
+                funding_account: ctx.accounts.fee_owner_quote_token_account.to_account_info(),
+                perpetuals: ctx.accounts.perpetuals.to_account_info(),
+                pool: ctx.accounts.pool.to_account_info(),
+                position: ctx.accounts.position.to_account_info(),
+                position_request: ctx.accounts.position_request.to_account_info(),
+                position_request_ata: ctx.accounts.position_request_ata.to_account_info(),
+                custody: ctx.accounts.custody.to_account_info(),
+                collateral_custody: ctx.accounts.collateral_custody.to_account_info(),
+                input_mint: ctx.accounts.quote_mint.to_account_info(),
+                referral: ctx.accounts.referral.to_account_info(),
+                token_program: ctx.accounts.quote_token_program.to_account_info(),
+                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                event_authority: ctx.accounts.jupiter_event_authority.to_account_info(),
+                program: ctx.accounts.jupiter_program.to_account_info(),
+            },
+            WrapWsolAccounts {
+                payer: ctx.accounts.fee_owner.to_account_info(),
+                owner: ctx.accounts.fee_owner.to_account_info(),
+                wsol_token_account: ctx.accounts.fee_owner_quote_token_account.to_account_info(),
+                wsol_mint: ctx.accounts.quote_mint.to_account_info(),
+                token_program: ctx.accounts.quote_token_program.to_account_info(),
+                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            },
+            &ctx.accounts.trade_config,
+            &params,
+            deltas,
+        )?;
 
         emit!(FeesClaimed {
             fee_owner: ctx.accounts.fee_owner.key(),
             quote_mint: ctx.accounts.trade_config.quote_mint,
-            amount: claimed_amount,
+            amount: deltas.total,
+        });
+        emit!(JupiterPositionRequestCreated {
+            fee_owner: ctx.accounts.fee_owner.key(),
+            position: ctx.accounts.position.key(),
+            position_request: ctx.accounts.position_request.key(),
+            collateral_token_delta: deltas.total,
+            size_usd_delta,
         });
 
         Ok(())
@@ -304,6 +397,34 @@ pub struct ClaimSingleAndOpen<'info> {
     #[account(address = PUMP_AMM_PROGRAM_ID)]
     /// CHECK: Pump AMM program.
     pub pump_amm_program: UncheckedAccount<'info>,
+    /// CHECK: Jupiter perpetuals PDA.
+    pub perpetuals: UncheckedAccount<'info>,
+    #[account(address = JLP_POOL_ACCOUNT)]
+    /// CHECK: Jupiter JLP pool account.
+    pub pool: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Jupiter position PDA.
+    pub position: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Jupiter position request PDA.
+    pub position_request: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: ATA owned by the Jupiter position request PDA for input_mint.
+    pub position_request_ata: UncheckedAccount<'info>,
+    #[account(constraint = custody.key() == trade_config.custody @ PumpJupiterError::InvalidMarketCustody)]
+    /// CHECK: Jupiter market custody from trade_config.
+    pub custody: UncheckedAccount<'info>,
+    #[account(constraint = collateral_custody.key() == trade_config.collateral_custody @ PumpJupiterError::InvalidCollateralCustody)]
+    /// CHECK: Jupiter collateral custody from trade_config.
+    pub collateral_custody: UncheckedAccount<'info>,
+    /// CHECK: Optional Jupiter referral account placeholder.
+    pub referral: UncheckedAccount<'info>,
+    #[account(address = JUPITER_PERPETUALS_EVENT_AUTHORITY)]
+    /// CHECK: Jupiter Perps event authority.
+    pub jupiter_event_authority: UncheckedAccount<'info>,
+    #[account(address = JUPITER_PERPETUALS_PROGRAM_ID)]
+    /// CHECK: Jupiter Perps program.
+    pub jupiter_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -356,6 +477,34 @@ pub struct ClaimSharedAndOpen<'info> {
     #[account(address = PUMP_AMM_PROGRAM_ID)]
     /// CHECK: Pump AMM program.
     pub pump_amm_program: UncheckedAccount<'info>,
+    /// CHECK: Jupiter perpetuals PDA.
+    pub perpetuals: UncheckedAccount<'info>,
+    #[account(address = JLP_POOL_ACCOUNT)]
+    /// CHECK: Jupiter JLP pool account.
+    pub pool: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Jupiter position PDA.
+    pub position: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Jupiter position request PDA.
+    pub position_request: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: ATA owned by the Jupiter position request PDA for input_mint.
+    pub position_request_ata: UncheckedAccount<'info>,
+    #[account(constraint = custody.key() == trade_config.custody @ PumpJupiterError::InvalidMarketCustody)]
+    /// CHECK: Jupiter market custody from trade_config.
+    pub custody: UncheckedAccount<'info>,
+    #[account(constraint = collateral_custody.key() == trade_config.collateral_custody @ PumpJupiterError::InvalidCollateralCustody)]
+    /// CHECK: Jupiter collateral custody from trade_config.
+    pub collateral_custody: UncheckedAccount<'info>,
+    /// CHECK: Optional Jupiter referral account placeholder.
+    pub referral: UncheckedAccount<'info>,
+    #[account(address = JUPITER_PERPETUALS_EVENT_AUTHORITY)]
+    /// CHECK: Jupiter Perps event authority.
+    pub jupiter_event_authority: UncheckedAccount<'info>,
+    #[account(address = JUPITER_PERPETUALS_PROGRAM_ID)]
+    /// CHECK: Jupiter Perps program.
+    pub jupiter_program: UncheckedAccount<'info>,
 }
 
 #[account]
@@ -420,6 +569,10 @@ impl ClaimOpenParams {
         require!(
             self.quote_price_usd_e6 > 0,
             PumpJupiterError::InvalidQuotePrice
+        );
+        require!(
+            self.price_slippage_usd_e6 > 0,
+            PumpJupiterError::InvalidPriceSlippage
         );
         require!(
             self.max_claim_amount == 0 || self.max_claim_amount >= self.min_claim_amount,
@@ -739,6 +892,203 @@ pub fn pump_distribute_creator_fees_v2<'info>(
     Ok(())
 }
 
+pub struct JupiterCreateIncreasePositionMarketRequestAccounts<'info> {
+    pub owner: AccountInfo<'info>,
+    pub funding_account: AccountInfo<'info>,
+    pub perpetuals: AccountInfo<'info>,
+    pub pool: AccountInfo<'info>,
+    pub position: AccountInfo<'info>,
+    pub position_request: AccountInfo<'info>,
+    pub position_request_ata: AccountInfo<'info>,
+    pub custody: AccountInfo<'info>,
+    pub collateral_custody: AccountInfo<'info>,
+    pub input_mint: AccountInfo<'info>,
+    pub referral: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+    pub associated_token_program: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+    pub event_authority: AccountInfo<'info>,
+    pub program: AccountInfo<'info>,
+}
+
+pub struct WrapWsolAccounts<'info> {
+    pub payer: AccountInfo<'info>,
+    pub owner: AccountInfo<'info>,
+    pub wsol_token_account: AccountInfo<'info>,
+    pub wsol_mint: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+    pub associated_token_program: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+}
+
+pub fn create_jupiter_position_request_after_claim<'info>(
+    jupiter_accounts: JupiterCreateIncreasePositionMarketRequestAccounts<'info>,
+    wrap_accounts: WrapWsolAccounts<'info>,
+    config: &TradeConfig,
+    params: &ClaimOpenParams,
+    deltas: ClaimDeltas,
+) -> Result<u64> {
+    if config.quote_mint == WSOL_MINT && deltas.lamports > 0 {
+        wrap_lamports_to_wsol(wrap_accounts, deltas.lamports)?;
+    }
+
+    let size_usd_delta = position_size_usd_e6(
+        deltas.total,
+        config.quote_mint,
+        params.quote_price_usd_e6,
+        params.leverage_bps,
+    )?;
+
+    jupiter_create_increase_position_market_request(
+        jupiter_accounts,
+        JupiterCreateIncreasePositionMarketRequestParams {
+            size_usd_delta,
+            collateral_token_delta: deltas.total,
+            side: config.side,
+            price_slippage_usd_e6: params.price_slippage_usd_e6,
+            jupiter_minimum_out: if params.jupiter_minimum_out == 0 {
+                None
+            } else {
+                Some(params.jupiter_minimum_out)
+            },
+            counter: params.position_request_counter,
+        },
+    )?;
+
+    Ok(size_usd_delta)
+}
+
+pub fn wrap_lamports_to_wsol(accounts: WrapWsolAccounts<'_>, lamports: u64) -> Result<()> {
+    let create_ata_ix = Instruction {
+        program_id: *accounts.associated_token_program.key,
+        accounts: vec![
+            AccountMeta::new(*accounts.payer.key, true),
+            AccountMeta::new(*accounts.wsol_token_account.key, false),
+            AccountMeta::new_readonly(*accounts.owner.key, false),
+            AccountMeta::new_readonly(*accounts.wsol_mint.key, false),
+            AccountMeta::new_readonly(*accounts.system_program.key, false),
+            AccountMeta::new_readonly(*accounts.token_program.key, false),
+        ],
+        data: vec![ASSOCIATED_TOKEN_CREATE_IDEMPOTENT_DISCRIMINATOR],
+    };
+    invoke(
+        &create_ata_ix,
+        &[
+            accounts.payer.clone(),
+            accounts.wsol_token_account.clone(),
+            accounts.owner.clone(),
+            accounts.wsol_mint.clone(),
+            accounts.system_program.clone(),
+            accounts.token_program.clone(),
+            accounts.associated_token_program.clone(),
+        ],
+    )?;
+
+    let transfer_ix =
+        system_instruction::transfer(accounts.owner.key, accounts.wsol_token_account.key, lamports);
+    invoke(
+        &transfer_ix,
+        &[
+            accounts.owner.clone(),
+            accounts.wsol_token_account.clone(),
+            accounts.system_program.clone(),
+        ],
+    )?;
+
+    let sync_native_ix = Instruction {
+        program_id: *accounts.token_program.key,
+        accounts: vec![AccountMeta::new(*accounts.wsol_token_account.key, false)],
+        data: vec![SPL_TOKEN_SYNC_NATIVE_DISCRIMINATOR],
+    };
+    invoke(
+        &sync_native_ix,
+        &[accounts.wsol_token_account, accounts.token_program],
+    )?;
+
+    Ok(())
+}
+
+pub struct JupiterCreateIncreasePositionMarketRequestParams {
+    pub size_usd_delta: u64,
+    pub collateral_token_delta: u64,
+    pub side: PositionSide,
+    pub price_slippage_usd_e6: u64,
+    pub jupiter_minimum_out: Option<u64>,
+    pub counter: u64,
+}
+
+pub fn jupiter_create_increase_position_market_request(
+    accounts: JupiterCreateIncreasePositionMarketRequestAccounts<'_>,
+    params: JupiterCreateIncreasePositionMarketRequestParams,
+) -> Result<()> {
+    let data = encode_jupiter_create_increase_position_market_request(params);
+    let ix = Instruction {
+        program_id: JUPITER_PERPETUALS_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(*accounts.owner.key, true),
+            AccountMeta::new(*accounts.funding_account.key, false),
+            AccountMeta::new_readonly(*accounts.perpetuals.key, false),
+            AccountMeta::new_readonly(*accounts.pool.key, false),
+            AccountMeta::new(*accounts.position.key, false),
+            AccountMeta::new(*accounts.position_request.key, false),
+            AccountMeta::new(*accounts.position_request_ata.key, false),
+            AccountMeta::new_readonly(*accounts.custody.key, false),
+            AccountMeta::new_readonly(*accounts.collateral_custody.key, false),
+            AccountMeta::new_readonly(*accounts.input_mint.key, false),
+            AccountMeta::new_readonly(*accounts.referral.key, false),
+            AccountMeta::new_readonly(*accounts.token_program.key, false),
+            AccountMeta::new_readonly(*accounts.associated_token_program.key, false),
+            AccountMeta::new_readonly(*accounts.system_program.key, false),
+            AccountMeta::new_readonly(*accounts.event_authority.key, false),
+            AccountMeta::new_readonly(*accounts.program.key, false),
+        ],
+        data,
+    };
+
+    invoke(
+        &ix,
+        &[
+            accounts.owner,
+            accounts.funding_account,
+            accounts.perpetuals,
+            accounts.pool,
+            accounts.position,
+            accounts.position_request,
+            accounts.position_request_ata,
+            accounts.custody,
+            accounts.collateral_custody,
+            accounts.input_mint,
+            accounts.referral,
+            accounts.token_program,
+            accounts.associated_token_program,
+            accounts.system_program,
+            accounts.event_authority,
+            accounts.program,
+        ],
+    )?;
+
+    Ok(())
+}
+
+pub fn encode_jupiter_create_increase_position_market_request(
+    params: JupiterCreateIncreasePositionMarketRequestParams,
+) -> Vec<u8> {
+    let mut data = JUPITER_CREATE_INCREASE_POSITION_MARKET_REQUEST_DISCRIMINATOR.to_vec();
+    data.extend_from_slice(&params.size_usd_delta.to_le_bytes());
+    data.extend_from_slice(&params.collateral_token_delta.to_le_bytes());
+    data.push(params.side.jupiter_side_discriminator());
+    data.extend_from_slice(&params.price_slippage_usd_e6.to_le_bytes());
+    match params.jupiter_minimum_out {
+        Some(minimum_out) => {
+            data.push(1);
+            data.extend_from_slice(&minimum_out.to_le_bytes());
+        }
+        None => data.push(0),
+    }
+    data.extend_from_slice(&params.counter.to_le_bytes());
+    data
+}
+
 pub fn remaining_account_metas(accounts: &[AccountInfo<'_>]) -> Vec<AccountMeta> {
     accounts
         .iter()
@@ -750,6 +1100,13 @@ pub fn remaining_account_metas(accounts: &[AccountInfo<'_>]) -> Vec<AccountMeta>
             }
         })
         .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimDeltas {
+    pub lamports: u64,
+    pub tokens: u64,
+    pub total: u64,
 }
 
 pub fn token_amount(account: &UncheckedAccount<'_>) -> Result<u64> {
@@ -768,6 +1125,30 @@ pub fn token_amount(account: &UncheckedAccount<'_>) -> Result<u64> {
     Ok(u64::from_le_bytes(amount_bytes))
 }
 
+pub fn claim_deltas(
+    before_lamports: u64,
+    after_lamports: u64,
+    before_tokens: u64,
+    after_tokens: u64,
+    include_lamports: bool,
+) -> Result<ClaimDeltas> {
+    let tokens = after_tokens.saturating_sub(before_tokens);
+    let lamports = if include_lamports {
+        after_lamports.saturating_sub(before_lamports)
+    } else {
+        0
+    };
+    let total = tokens
+        .checked_add(lamports)
+        .ok_or_else(|| error!(PumpJupiterError::MathOverflow))?;
+
+    Ok(ClaimDeltas {
+        lamports,
+        tokens,
+        total,
+    })
+}
+
 pub fn claimed_quote_delta(
     before_lamports: u64,
     after_lamports: u64,
@@ -775,16 +1156,51 @@ pub fn claimed_quote_delta(
     after_tokens: u64,
     include_lamports: bool,
 ) -> Result<u64> {
-    let token_delta = after_tokens.saturating_sub(before_tokens);
-    let lamport_delta = if include_lamports {
-        after_lamports.saturating_sub(before_lamports)
-    } else {
-        0
-    };
+    Ok(claim_deltas(
+        before_lamports,
+        after_lamports,
+        before_tokens,
+        after_tokens,
+        include_lamports,
+    )?
+    .total)
+}
 
-    token_delta
-        .checked_add(lamport_delta)
-        .ok_or_else(|| error!(PumpJupiterError::MathOverflow))
+pub fn position_size_usd_e6(
+    collateral_token_delta: u64,
+    quote_mint: Pubkey,
+    quote_price_usd_e6: u64,
+    leverage_bps: u64,
+) -> Result<u64> {
+    let quote_denominator = quote_amount_denominator(quote_mint)?;
+    let size = u128::from(collateral_token_delta)
+        .checked_mul(u128::from(quote_price_usd_e6))
+        .and_then(|value| value.checked_mul(u128::from(leverage_bps)))
+        .and_then(|value| value.checked_div(quote_denominator))
+        .and_then(|value| value.checked_div(BPS_DENOMINATOR))
+        .ok_or_else(|| error!(PumpJupiterError::MathOverflow))?;
+
+    require!(size > 0, PumpJupiterError::PositionSizeTooSmall);
+    u64::try_from(size).map_err(|_| error!(PumpJupiterError::MathOverflow))
+}
+
+pub fn quote_amount_denominator(quote_mint: Pubkey) -> Result<u128> {
+    if quote_mint == WSOL_MINT {
+        Ok(WSOL_DECIMALS_DENOMINATOR)
+    } else if quote_mint == USDC_MINT {
+        Ok(USD_DECIMALS_DENOMINATOR)
+    } else {
+        err!(PumpJupiterError::UnsupportedQuoteMint)
+    }
+}
+
+impl PositionSide {
+    pub fn jupiter_side_discriminator(self) -> u8 {
+        match self {
+            PositionSide::Long => 1,
+            PositionSide::Short => 2,
+        }
+    }
 }
 
 #[event]
@@ -792,6 +1208,15 @@ pub struct FeesClaimed {
     pub fee_owner: Pubkey,
     pub quote_mint: Pubkey,
     pub amount: u64,
+}
+
+#[event]
+pub struct JupiterPositionRequestCreated {
+    pub fee_owner: Pubkey,
+    pub position: Pubkey,
+    pub position_request: Pubkey,
+    pub collateral_token_delta: u64,
+    pub size_usd_delta: u64,
 }
 
 #[error_code]
@@ -812,6 +1237,8 @@ pub enum PumpJupiterError {
     NoClaimSource,
     #[msg("Quote price must be greater than zero")]
     InvalidQuotePrice,
+    #[msg("Price slippage must be greater than zero")]
+    InvalidPriceSlippage,
     #[msg("Claim bounds are invalid")]
     InvalidClaimBounds,
     #[msg("Claimed amount is below the configured minimum")]
@@ -822,6 +1249,8 @@ pub enum PumpJupiterError {
     MathOverflow,
     #[msg("Token account data is invalid")]
     InvalidTokenAccount,
+    #[msg("Calculated Jupiter position size is too small")]
+    PositionSizeTooSmall,
 }
 
 #[cfg(test)]
@@ -917,5 +1346,36 @@ mod tests {
         data.push(1);
 
         assert_eq!(data, vec![255, 203, 19, 79, 244, 68, 8, 159, 1]);
+    }
+
+    #[test]
+    fn calculates_usdc_position_size() {
+        let size = position_size_usd_e6(10_000_000, USDC_MINT, 1_000_000, 30_000).unwrap();
+        assert_eq!(size, 30_000_000);
+    }
+
+    #[test]
+    fn calculates_wsol_position_size() {
+        let size = position_size_usd_e6(1_500_000_000, WSOL_MINT, 200_000_000, 20_000).unwrap();
+        assert_eq!(size, 600_000_000);
+    }
+
+    #[test]
+    fn encodes_jupiter_create_increase_request_data() {
+        let data = encode_jupiter_create_increase_position_market_request(
+            JupiterCreateIncreasePositionMarketRequestParams {
+                size_usd_delta: 30_000_000,
+                collateral_token_delta: 10_000_000,
+                side: PositionSide::Short,
+                price_slippage_usd_e6: 100_000_000,
+                jupiter_minimum_out: Some(9_900_000),
+                counter: 42,
+            },
+        );
+
+        assert_eq!(&data[0..8], &JUPITER_CREATE_INCREASE_POSITION_MARKET_REQUEST_DISCRIMINATOR);
+        assert_eq!(data[24], PositionSide::Short.jupiter_side_discriminator());
+        assert_eq!(data[33], 1);
+        assert_eq!(data.len(), 50);
     }
 }
