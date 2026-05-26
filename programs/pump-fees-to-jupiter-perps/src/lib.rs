@@ -25,6 +25,10 @@ pub const PUMP_COLLECT_CREATOR_FEE_V2_DISCRIMINATOR: [u8; 8] =
     [207, 17, 138, 242, 4, 34, 19, 56];
 pub const PUMP_AMM_COLLECT_COIN_CREATOR_FEE_DISCRIMINATOR: [u8; 8] =
     [160, 57, 89, 42, 181, 139, 43, 66];
+pub const PUMP_AMM_TRANSFER_CREATOR_FEES_TO_PUMP_V2_DISCRIMINATOR: [u8; 8] =
+    [1, 33, 78, 185, 33, 67, 44, 92];
+pub const PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR: [u8; 8] =
+    [255, 203, 19, 79, 244, 68, 8, 159];
 
 const SPL_TOKEN_AMOUNT_OFFSET: usize = 64;
 const SPL_TOKEN_AMOUNT_END: usize = 72;
@@ -143,6 +147,85 @@ pub mod pump_fees_to_jupiter_perps {
 
         Ok(())
     }
+
+    pub fn claim_shared_and_open<'info>(
+        ctx: Context<'_, '_, '_, 'info, ClaimSharedAndOpen<'info>>,
+        params: ClaimOpenParams,
+        options: ClaimSharedOptions,
+    ) -> Result<()> {
+        ctx.accounts.validate_config()?;
+        params.validate(ctx.accounts.trade_config.max_leverage_bps)?;
+
+        let before_lamports = ctx.accounts.fee_owner.to_account_info().lamports();
+        let before_tokens = token_amount(&ctx.accounts.fee_owner_quote_token_account)?;
+
+        if options.sweep_amm {
+            pump_amm_transfer_creator_fees_to_pump_v2(
+                PumpAmmTransferCreatorFeesToPumpV2Accounts {
+                    payer: ctx.accounts.fee_owner.to_account_info(),
+                    quote_mint: ctx.accounts.quote_mint.to_account_info(),
+                    token_program: ctx.accounts.quote_token_program.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                    associated_token_program: ctx
+                        .accounts
+                        .associated_token_program
+                        .to_account_info(),
+                    coin_creator: ctx.accounts.sharing_config.to_account_info(),
+                    coin_creator_vault_authority: ctx
+                        .accounts
+                        .coin_creator_vault_authority
+                        .to_account_info(),
+                    coin_creator_vault_ata: ctx.accounts.coin_creator_vault_ata.to_account_info(),
+                    pump_creator_vault: ctx.accounts.creator_vault.to_account_info(),
+                    pump_creator_vault_ata: ctx
+                        .accounts
+                        .creator_vault_quote_token_account
+                        .to_account_info(),
+                    event_authority: ctx.accounts.pump_amm_event_authority.to_account_info(),
+                    program: ctx.accounts.pump_amm_program.to_account_info(),
+                },
+            )?;
+        }
+
+        pump_distribute_creator_fees_v2(
+            PumpDistributeCreatorFeesV2Accounts {
+                payer: ctx.accounts.fee_owner.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                bonding_curve: ctx.accounts.bonding_curve.to_account_info(),
+                sharing_config: ctx.accounts.sharing_config.to_account_info(),
+                creator_vault: ctx.accounts.creator_vault.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                event_authority: ctx.accounts.pump_event_authority.to_account_info(),
+                program: ctx.accounts.pump_program.to_account_info(),
+                creator_vault_quote_token_account: ctx
+                    .accounts
+                    .creator_vault_quote_token_account
+                    .to_account_info(),
+                quote_mint: ctx.accounts.quote_mint.to_account_info(),
+                quote_token_program: ctx.accounts.quote_token_program.to_account_info(),
+                associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+            },
+            options.initialize_shareholder_atas,
+            ctx.remaining_accounts,
+        )?;
+
+        let claimed_amount = claimed_quote_delta(
+            before_lamports,
+            ctx.accounts.fee_owner.to_account_info().lamports(),
+            before_tokens,
+            token_amount(&ctx.accounts.fee_owner_quote_token_account)?,
+            ctx.accounts.trade_config.quote_mint == WSOL_MINT,
+        )?;
+        params.validate_claim_amount(claimed_amount)?;
+
+        emit!(FeesClaimed {
+            fee_owner: ctx.accounts.fee_owner.key(),
+            quote_mint: ctx.accounts.trade_config.quote_mint,
+            amount: claimed_amount,
+        });
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -212,6 +295,58 @@ pub struct ClaimSingleAndOpen<'info> {
     pub pump_program: UncheckedAccount<'info>,
     #[account(mut)]
     /// CHECK: Pump AMM PDA [b"creator_vault", fee_owner].
+    pub coin_creator_vault_authority: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: ATA for (coin_creator_vault_authority, quote_token_program, quote_mint).
+    pub coin_creator_vault_ata: UncheckedAccount<'info>,
+    /// CHECK: Pump AMM event authority PDA.
+    pub pump_amm_event_authority: UncheckedAccount<'info>,
+    #[account(address = PUMP_AMM_PROGRAM_ID)]
+    /// CHECK: Pump AMM program.
+    pub pump_amm_program: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimSharedAndOpen<'info> {
+    #[account(mut)]
+    pub fee_owner: Signer<'info>,
+    #[account(
+        seeds = [TRADE_CONFIG_SEED, fee_owner.key().as_ref()],
+        bump = trade_config.bump,
+        constraint = trade_config.fee_owner == fee_owner.key() @ PumpJupiterError::Unauthorized
+    )]
+    pub trade_config: Account<'info, TradeConfig>,
+    /// CHECK: Pump base token mint.
+    pub mint: UncheckedAccount<'info>,
+    /// CHECK: Pump bonding curve PDA for mint.
+    pub bonding_curve: UncheckedAccount<'info>,
+    /// CHECK: Pump Fees sharing config PDA for mint.
+    pub sharing_config: UncheckedAccount<'info>,
+    #[account(constraint = quote_mint.key() == trade_config.quote_mint @ PumpJupiterError::UnsupportedQuoteMint)]
+    /// CHECK: Validated against trade_config.quote_mint.
+    pub quote_mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Fee owner's ATA for the configured quote mint.
+    pub fee_owner_quote_token_account: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Pump PDA [b"creator-vault", sharing_config].
+    pub creator_vault: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: ATA for (creator_vault, quote_token_program, quote_mint).
+    pub creator_vault_quote_token_account: UncheckedAccount<'info>,
+    /// CHECK: SPL Token program for quote_mint.
+    pub quote_token_program: UncheckedAccount<'info>,
+    /// CHECK: Associated Token program.
+    pub associated_token_program: UncheckedAccount<'info>,
+    /// CHECK: System program.
+    pub system_program: UncheckedAccount<'info>,
+    /// CHECK: Pump event authority PDA.
+    pub pump_event_authority: UncheckedAccount<'info>,
+    #[account(address = PUMP_PROGRAM_ID)]
+    /// CHECK: Pump program.
+    pub pump_program: UncheckedAccount<'info>,
+    #[account(mut)]
+    /// CHECK: Pump AMM PDA [b"creator_vault", sharing_config].
     pub coin_creator_vault_authority: UncheckedAccount<'info>,
     #[account(mut)]
     /// CHECK: ATA for (coin_creator_vault_authority, quote_token_program, quote_mint).
@@ -314,6 +449,12 @@ pub struct ClaimSingleOptions {
     pub collect_amm: bool,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimSharedOptions {
+    pub sweep_amm: bool,
+    pub initialize_shareholder_atas: bool,
+}
+
 impl ClaimSingleOptions {
     pub fn validate(&self) -> Result<()> {
         require!(
@@ -365,6 +506,13 @@ impl TargetMarket {
 }
 
 impl<'info> ClaimSingleAndOpen<'info> {
+    pub fn validate_config(&self) -> Result<()> {
+        require!(!self.trade_config.paused, PumpJupiterError::ConfigPaused);
+        Ok(())
+    }
+}
+
+impl<'info> ClaimSharedAndOpen<'info> {
     pub fn validate_config(&self) -> Result<()> {
         require!(!self.trade_config.paused, PumpJupiterError::ConfigPaused);
         Ok(())
@@ -465,6 +613,143 @@ pub fn pump_amm_collect_coin_creator_fee(
     )?;
 
     Ok(())
+}
+
+pub struct PumpAmmTransferCreatorFeesToPumpV2Accounts<'info> {
+    pub payer: AccountInfo<'info>,
+    pub quote_mint: AccountInfo<'info>,
+    pub token_program: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+    pub associated_token_program: AccountInfo<'info>,
+    pub coin_creator: AccountInfo<'info>,
+    pub coin_creator_vault_authority: AccountInfo<'info>,
+    pub coin_creator_vault_ata: AccountInfo<'info>,
+    pub pump_creator_vault: AccountInfo<'info>,
+    pub pump_creator_vault_ata: AccountInfo<'info>,
+    pub event_authority: AccountInfo<'info>,
+    pub program: AccountInfo<'info>,
+}
+
+pub fn pump_amm_transfer_creator_fees_to_pump_v2(
+    accounts: PumpAmmTransferCreatorFeesToPumpV2Accounts<'_>,
+) -> Result<()> {
+    let ix = Instruction {
+        program_id: PUMP_AMM_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(*accounts.payer.key, true),
+            AccountMeta::new_readonly(*accounts.quote_mint.key, false),
+            AccountMeta::new_readonly(*accounts.token_program.key, false),
+            AccountMeta::new_readonly(*accounts.system_program.key, false),
+            AccountMeta::new_readonly(*accounts.associated_token_program.key, false),
+            AccountMeta::new_readonly(*accounts.coin_creator.key, false),
+            AccountMeta::new(*accounts.coin_creator_vault_authority.key, false),
+            AccountMeta::new(*accounts.coin_creator_vault_ata.key, false),
+            AccountMeta::new(*accounts.pump_creator_vault.key, false),
+            AccountMeta::new(*accounts.pump_creator_vault_ata.key, false),
+            AccountMeta::new_readonly(*accounts.event_authority.key, false),
+            AccountMeta::new_readonly(*accounts.program.key, false),
+        ],
+        data: PUMP_AMM_TRANSFER_CREATOR_FEES_TO_PUMP_V2_DISCRIMINATOR.to_vec(),
+    };
+
+    invoke(
+        &ix,
+        &[
+            accounts.payer,
+            accounts.quote_mint,
+            accounts.token_program,
+            accounts.system_program,
+            accounts.associated_token_program,
+            accounts.coin_creator,
+            accounts.coin_creator_vault_authority,
+            accounts.coin_creator_vault_ata,
+            accounts.pump_creator_vault,
+            accounts.pump_creator_vault_ata,
+            accounts.event_authority,
+            accounts.program,
+        ],
+    )?;
+
+    Ok(())
+}
+
+pub struct PumpDistributeCreatorFeesV2Accounts<'info> {
+    pub payer: AccountInfo<'info>,
+    pub mint: AccountInfo<'info>,
+    pub bonding_curve: AccountInfo<'info>,
+    pub sharing_config: AccountInfo<'info>,
+    pub creator_vault: AccountInfo<'info>,
+    pub system_program: AccountInfo<'info>,
+    pub event_authority: AccountInfo<'info>,
+    pub program: AccountInfo<'info>,
+    pub creator_vault_quote_token_account: AccountInfo<'info>,
+    pub quote_mint: AccountInfo<'info>,
+    pub quote_token_program: AccountInfo<'info>,
+    pub associated_token_program: AccountInfo<'info>,
+}
+
+pub fn pump_distribute_creator_fees_v2<'info>(
+    accounts: PumpDistributeCreatorFeesV2Accounts<'info>,
+    initialize_ata: bool,
+    remaining_accounts: &[AccountInfo<'info>],
+) -> Result<()> {
+    let mut data = PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR.to_vec();
+    data.push(u8::from(initialize_ata));
+
+    let mut metas = vec![
+        AccountMeta::new(*accounts.payer.key, true),
+        AccountMeta::new_readonly(*accounts.mint.key, false),
+        AccountMeta::new_readonly(*accounts.bonding_curve.key, false),
+        AccountMeta::new_readonly(*accounts.sharing_config.key, false),
+        AccountMeta::new(*accounts.creator_vault.key, false),
+        AccountMeta::new_readonly(*accounts.system_program.key, false),
+        AccountMeta::new_readonly(*accounts.event_authority.key, false),
+        AccountMeta::new_readonly(*accounts.program.key, false),
+        AccountMeta::new(*accounts.creator_vault_quote_token_account.key, false),
+        AccountMeta::new_readonly(*accounts.quote_mint.key, false),
+        AccountMeta::new_readonly(*accounts.quote_token_program.key, false),
+        AccountMeta::new_readonly(*accounts.associated_token_program.key, false),
+    ];
+    metas.extend(remaining_account_metas(remaining_accounts));
+
+    let ix = Instruction {
+        program_id: PUMP_PROGRAM_ID,
+        accounts: metas,
+        data,
+    };
+
+    let mut account_infos = vec![
+        accounts.payer,
+        accounts.mint,
+        accounts.bonding_curve,
+        accounts.sharing_config,
+        accounts.creator_vault,
+        accounts.system_program,
+        accounts.event_authority,
+        accounts.program,
+        accounts.creator_vault_quote_token_account,
+        accounts.quote_mint,
+        accounts.quote_token_program,
+        accounts.associated_token_program,
+    ];
+    account_infos.extend_from_slice(remaining_accounts);
+
+    invoke(&ix, &account_infos)?;
+
+    Ok(())
+}
+
+pub fn remaining_account_metas(accounts: &[AccountInfo<'_>]) -> Vec<AccountMeta> {
+    accounts
+        .iter()
+        .map(|account| {
+            if account.is_writable {
+                AccountMeta::new(*account.key, account.is_signer)
+            } else {
+                AccountMeta::new_readonly(*account.key, account.is_signer)
+            }
+        })
+        .collect()
 }
 
 pub fn token_amount(account: &UncheckedAccount<'_>) -> Result<u64> {
@@ -624,5 +909,13 @@ mod tests {
             params.validate_claim_amount(21),
             Err(error) if error == PumpJupiterError::ClaimAmountTooLarge.into()
         ));
+    }
+
+    #[test]
+    fn encodes_distribute_creator_fees_v2_data() {
+        let mut data = PUMP_DISTRIBUTE_CREATOR_FEES_V2_DISCRIMINATOR.to_vec();
+        data.push(1);
+
+        assert_eq!(data, vec![255, 203, 19, 79, 244, 68, 8, 159, 1]);
     }
 }
