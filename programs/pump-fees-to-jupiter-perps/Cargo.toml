@@ -1,0 +1,21 @@
+[package]
+name = "pump-fees-to-jupiter-perps"
+version = "0.1.0"
+description = "Claim Pump.fun creator fees and create Jupiter Perps position requests"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "pump_fees_to_jupiter_perps"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.32.1"
+
